@@ -32,3 +32,7 @@ sysinfo.txt
 *.apk
 *.aab
 *.unitypackage
+
+# Android/Gradle build caches
+.utmp/
+test_build_BurstDebugInformation_DoNotShip/

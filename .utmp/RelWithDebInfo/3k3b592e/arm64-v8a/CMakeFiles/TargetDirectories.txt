@@ -1,5 +1,0 @@
-/Users/sergeyzhahovskiy/Desktop/mixed reality/Unity3DGS_VR-main/Unity3DGS_VR_BIRP/.utmp/RelWithDebInfo/3k3b592e/arm64-v8a/CMakeFiles/edit_cache.dir
-/Users/sergeyzhahovskiy/Desktop/mixed reality/Unity3DGS_VR-main/Unity3DGS_VR_BIRP/.utmp/RelWithDebInfo/3k3b592e/arm64-v8a/CMakeFiles/rebuild_cache.dir
-/Users/sergeyzhahovskiy/Desktop/mixed reality/Unity3DGS_VR-main/Unity3DGS_VR_BIRP/.utmp/RelWithDebInfo/3k3b592e/arm64-v8a/FramePacing/CMakeFiles/swappywrapper.dir
-/Users/sergeyzhahovskiy/Desktop/mixed reality/Unity3DGS_VR-main/Unity3DGS_VR_BIRP/.utmp/RelWithDebInfo/3k3b592e/arm64-v8a/FramePacing/CMakeFiles/edit_cache.dir
-/Users/sergeyzhahovskiy/Desktop/mixed reality/Unity3DGS_VR-main/Unity3DGS_VR_BIRP/.utmp/RelWithDebInfo/3k3b592e/arm64-v8a/FramePacing/CMakeFiles/rebuild_cache.dir
