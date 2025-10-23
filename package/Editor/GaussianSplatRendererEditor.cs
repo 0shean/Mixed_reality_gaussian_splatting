@@ -34,6 +34,7 @@ namespace GaussianSplatting.Editor
         SerializedProperty m_PropShaderComposite;
         SerializedProperty m_PropShaderDebugPoints;
         SerializedProperty m_PropShaderDebugBoxes;
+        SerializedProperty m_PropShaderWombatSplats;
         SerializedProperty m_PropCSSplatUtilities;
 
         bool m_ResourcesExpanded = false;
@@ -74,6 +75,7 @@ namespace GaussianSplatting.Editor
             m_PropShaderComposite = serializedObject.FindProperty("m_ShaderComposite");
             m_PropShaderDebugPoints = serializedObject.FindProperty("m_ShaderDebugPoints");
             m_PropShaderDebugBoxes = serializedObject.FindProperty("m_ShaderDebugBoxes");
+            m_PropShaderWombatSplats = serializedObject.FindProperty("m_ShaderWombatSplats");
             m_PropCSSplatUtilities = serializedObject.FindProperty("m_CSSplatUtilities");
 
             s_AllEditors.Add(this);
@@ -126,6 +128,7 @@ namespace GaussianSplatting.Editor
                 EditorGUILayout.PropertyField(m_PropShaderComposite);
                 EditorGUILayout.PropertyField(m_PropShaderDebugPoints);
                 EditorGUILayout.PropertyField(m_PropShaderDebugBoxes);
+                EditorGUILayout.PropertyField(m_PropShaderWombatSplats);
                 EditorGUILayout.PropertyField(m_PropCSSplatUtilities);
             }
             bool validAndEnabled = gs && gs.enabled && gs.gameObject.activeInHierarchy && gs.HasValidAsset;
