@@ -18,6 +18,7 @@ namespace GaussianSplatting.Runtime
     {
         // ReSharper disable MemberCanBePrivate.Global - used by HDRP/URP features that are not always compiled
         internal static readonly ProfilerMarker s_ProfDraw = new(ProfilerCategory.Render, "GaussianSplat.Draw", MarkerFlags.SampleGPU);
+        internal static readonly ProfilerMarker s_ProfWombatDraw = new(ProfilerCategory.Render, "GaussianSplat.WombatDraw", MarkerFlags.SampleGPU);
         internal static readonly ProfilerMarker s_ProfCompose = new(ProfilerCategory.Render, "GaussianSplat.Compose", MarkerFlags.SampleGPU);
         internal static readonly ProfilerMarker s_ProfCalcView = new(ProfilerCategory.Render, "GaussianSplat.CalcView", MarkerFlags.SampleGPU);
         // ReSharper restore MemberCanBePrivate.Global
@@ -164,6 +165,23 @@ namespace GaussianSplatting.Runtime
                 cmb.BeginSample(s_ProfDraw);
                 cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, displayMat, 0, topology, indexCount, instanceCount, mpb);
                 cmb.EndSample(s_ProfDraw);
+
+                // Let's assemble the extra language feature with the shader here.
+                // Ok, all the SplatViewDatas for the given camera angle are stored in m_gpuView
+                Material wombatMaterial = gs.m_MatWombatSplats;
+                // if (wombatMaterial == null) continue;
+
+                int tmpID = Shader.PropertyToID("_WombatTempRT");
+                cmb.GetTemporaryRT(tmpID, -1, -1, 0, FilterMode.Point, GraphicsFormat.R16G16B16A16_SFloat);
+                cmb.SetRenderTarget(tmpID, BuiltinRenderTextureType.CurrentActive);
+                cmb.ClearRenderTarget(RTClearFlags.Color, new Color(0, 0, 0, 0), 0, 0);
+
+                // Ok, we are so back, we can now draw procedural the material into the wombat splats.
+                cmb.BeginSample(s_ProfWombatDraw);
+                cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, wombatMaterial, 0, topology, indexCount, instanceCount, mpb);
+                cmb.EndSample(s_ProfWombatDraw);
+
+                cmb.ReleaseTemporaryRT(tmpID);
             }
             return matComposite;
         }
@@ -247,6 +265,7 @@ namespace GaussianSplatting.Runtime
         public Shader m_ShaderComposite;
         public Shader m_ShaderDebugPoints;
         public Shader m_ShaderDebugBoxes;
+        public Shader m_ShaderWombatSplats;
         [Tooltip("Gaussian splatting compute shader")]
         public ComputeShader m_CSSplatUtilities;
 
@@ -278,6 +297,7 @@ namespace GaussianSplatting.Runtime
         internal Material m_MatComposite;
         internal Material m_MatDebugPoints;
         internal Material m_MatDebugBoxes;
+        internal Material m_MatWombatSplats;
 
         internal int m_FrameCounter;
         GaussianSplatAsset m_PrevAsset;
@@ -445,7 +465,7 @@ namespace GaussianSplatting.Runtime
         }
 
         bool resourcesAreSetUp => m_ShaderSplats != null && m_ShaderComposite != null && m_ShaderDebugPoints != null &&
-                                  m_ShaderDebugBoxes != null && m_CSSplatUtilities != null && SystemInfo.supportsComputeShaders;
+                                  m_ShaderDebugBoxes != null && m_ShaderWombatSplats != null && m_CSSplatUtilities != null && SystemInfo.supportsComputeShaders;
 
         public void EnsureMaterials()
         {
@@ -455,6 +475,7 @@ namespace GaussianSplatting.Runtime
                 m_MatComposite = new Material(m_ShaderComposite) {name = "GaussianClearDstAlpha"};
                 m_MatDebugPoints = new Material(m_ShaderDebugPoints) {name = "GaussianDebugPoints"};
                 m_MatDebugBoxes = new Material(m_ShaderDebugBoxes) {name = "GaussianDebugBoxes"};
+                m_MatWombatSplats = new Material(m_ShaderWombatSplats) { name = "GaussianWombatSplats" };
             }
         }
 

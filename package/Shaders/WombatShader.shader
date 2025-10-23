@@ -103,14 +103,10 @@ half4 frag (v2f i) : SV_Target
     if (alpha < 1.0/255.0)
         discard;
 
-	// Keep if red is dominant
-	// if (i.col.r < 0.5 || i.col.r < i.col.g * 2 || i.col.r < i.col.b * 2)
-	// {
-	// 	discard;
-	// }
-    half4 res = half4(i.col.rgb * alpha, alpha);
-    // half4 res = half4(half3(1,0,1) * alpha, alpha);
-    return res;
+	half intensity = (i.col.r + i.col.g + i.col.b) * (1.0/3.0);
+	half3 grey = half3(intensity, intensity, intensity);
+	half4 res = half4(grey * alpha, alpha);
+	return res;
 }
 ENDCG
         }
