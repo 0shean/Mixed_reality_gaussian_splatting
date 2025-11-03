@@ -357,6 +357,7 @@ namespace GaussianSplatting.Runtime
             ScaleSelection,
             ExportData,
             CopySplats,
+            PrecomputeCLIPDotProducts,
         }
 
         public bool HasValidAsset =>
@@ -369,7 +370,7 @@ namespace GaussianSplatting.Runtime
             m_Asset.colorData != null;
         public bool HasValidRenderSetup => m_GpuPosData != null && m_GpuOtherData != null && m_GpuChunks != null;
 
-        const int kGpuViewDataSize = 40;
+        const int kGpuViewDataSize = 48;
 
         void CreateResourcesForAsset()
         {
@@ -547,6 +548,7 @@ namespace GaussianSplatting.Runtime
             DisposeBuffer(ref m_GpuIndexBuffer);
             DisposeBuffer(ref m_GpuSortDistances);
             DisposeBuffer(ref m_GpuSortKeys);
+            DisposeBuffer(ref m_GpuCLIPDotProducts);
 
             DisposeBuffer(ref m_GpuEditSelectedMouseDown);
             DisposeBuffer(ref m_GpuEditPosMouseDown);
@@ -1013,6 +1015,7 @@ namespace GaussianSplatting.Runtime
             m_GpuSHData.Dispose();
             DestroyImmediate(m_GpuColorData);
             m_GpuView.Dispose();
+            // TODO: reset the dot products buffer too.
 
             m_GpuEditSelected?.Dispose();
             m_GpuEditSelectedMouseDown?.Dispose();
@@ -1044,12 +1047,37 @@ namespace GaussianSplatting.Runtime
             dst.editModified = true;
         }
 
-        public void PrecomputeCLIPQueryDotProducts()
+        public void ProcessCLIPQuery(string clipText)
+        {
+            float[] clipQueryVector = new float[] { 0.1f, 0.2f, 0.3f }; // TODO: get real CLIP vector from text
+            PrecomputeCLIPQueryDotProducts(clipQueryVector);
+        }
+
+        public void PrecomputeCLIPQueryDotProducts(float[] clipQueryVector)
         {
             // Input: 512-dim CLIP query float vector. Buffer with N language feature vectors
             // Output: N dot products between query and Gaussian language feature vectors
             // The output will lie in a structured compute buffer.
+            using var cmb = new CommandBuffer { name = "PrecomputeCLIPDotProducts" };
 
+            SetAssetDataOnCS(cmb, KernelIndices.PrecomputeCLIPDotProducts);
+
+            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.PrecomputeCLIPDotProducts, "_SplatCLIPDotProducts", m_GpuCLIPDotProducts);
+
+            // TODO: get the full CLIP vector and set this.
+            cmb.SetComputeIntParam(m_CSSplatUtilities, "_CLIPQueryVectorDim", clipQueryVector.Length);
+
+            // Create structured buffer of floats that stores the CLIP vector and pass to the compute buffer.
+            // Initialize GraphicsBuffer with the query vector data.
+            ComputeBuffer clipQueryBuffer = new ComputeBuffer(clipQueryVector.Length, sizeof(float));
+            clipQueryBuffer.SetData(clipQueryVector);
+            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.PrecomputeCLIPDotProducts, "_CLIPQueryVector", clipQueryBuffer);
+
+            DispatchUtilsAndExecute(cmb, KernelIndices.PrecomputeCLIPDotProducts, m_SplatCount);
+
+            // Get this into a render texture so we can visualize it if needed.
+
+            clipQueryBuffer.Release();
         }
 
         public void EditCopySplats(

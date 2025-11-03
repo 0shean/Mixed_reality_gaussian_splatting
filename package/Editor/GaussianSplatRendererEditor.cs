@@ -45,6 +45,8 @@ namespace GaussianSplatting.Editor
 
         static HashSet<GaussianSplatRendererEditor> s_AllEditors = new();
 
+        string editorCLIPQuery = "";
+
         public static void BumpGUICounter()
         {
             ++s_EditStatsUpdateCounter;
@@ -146,15 +148,11 @@ namespace GaussianSplatting.Editor
             }
 
             EditorGUILayout.Space();
-            string editorText = EditorGUILayout.TextField("CLIP query", editorText);
-            if (GUILayout.Button("Recompute similarities"))
+            EditorGUILayout.TextField("CLIP query", editorCLIPQuery);
+            if (GUILayout.Button("Process CLIP Query"))
             {
-                // Safely call a method on the component if present. Replace "OnEditorText" with the actual method name.
-                // gs.SendMessage("OnEditorText", editorText, SendMessageOptions.DontRequireReceiver);
-                // EditorPrefs.SetString("nesnausk.GaussianSplatting.EditorText", editorText);
-
+                gs.ProcessCLIPQuery(editorCLIPQuery);
             }
-            EditorGUILayout.EndHorizontal();
 
             serializedObject.ApplyModifiedProperties();
         }

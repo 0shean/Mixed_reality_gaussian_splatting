@@ -612,6 +612,7 @@ struct SplatViewData
     float4 pos;
     float2 axis1, axis2;
     uint2 color; // 4xFP16
+    float clipDotProduct;
 };
 
 // If we are rendering into backbuffer directly (e.g. HDR off, no postprocessing),
