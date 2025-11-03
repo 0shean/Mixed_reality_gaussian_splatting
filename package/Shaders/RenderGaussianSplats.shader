@@ -10,7 +10,7 @@ Shader "Gaussian Splatting/Render Splats"
             ZWrite Off
             Blend OneMinusDstAlpha One
             Cull Off
-            
+
 CGPROGRAM
 #pragma vertex vert
 #pragma fragment frag
@@ -48,6 +48,12 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 		o.col.r = f16tof32(view.color.x >> 16);
 		o.col.g = f16tof32(view.color.x);
 		o.col.b = f16tof32(view.color.y >> 16);
+
+		// Map the dot product to value in [0, 1] (currently could be any value)
+		o.col.r = saturate(view.clipDotProduct);
+		o.col.g = saturate(view.clipDotProduct);
+		o.col.b = saturate(view.clipDotProduct); // store in blue channel for debug purposes
+
 		o.col.a = f16tof32(view.color.y);
 
 		uint idx = vtxID;
@@ -68,7 +74,7 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 			uint selVal = _SplatSelectedBits.Load(wordIdx * 4);
 			if (selVal & (1 << bitIdx))
 			{
-				o.col.a = -1;				
+				o.col.a = -1;
 			}
 		}
 	}
@@ -99,7 +105,7 @@ half4 frag (v2f i) : SV_Target
 		}
 		i.col.rgb = lerp(i.col.rgb, selectedColor, 0.5);
 	}
-	
+
     if (alpha < 1.0/255.0)
         discard;
 

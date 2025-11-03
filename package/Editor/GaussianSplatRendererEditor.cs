@@ -148,7 +148,7 @@ namespace GaussianSplatting.Editor
             }
 
             EditorGUILayout.Space();
-            EditorGUILayout.TextField("CLIP query", editorCLIPQuery);
+            editorCLIPQuery = EditorGUILayout.TextField("CLIP query", editorCLIPQuery);
             if (GUILayout.Button("Process CLIP Query"))
             {
                 gs.ProcessCLIPQuery(editorCLIPQuery);

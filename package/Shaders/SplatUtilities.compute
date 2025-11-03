@@ -187,6 +187,8 @@ bool IsSplatCut(float3 pos)
     return finalCut;
 }
 
+RWStructuredBuffer<float> _SplatCLIPDotProducts;
+
 [numthreads(GROUP_SIZE,1,1)]
 void CSCalcViewData (uint3 id : SV_DispatchThreadID)
 {
@@ -248,6 +250,8 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         view.color.x = (f32tof16(col.r) << 16) | f32tof16(col.g);
         view.color.y = (f32tof16(col.b) << 16) | f32tof16(col.a);
     }
+
+    view.clipDotProduct = _SplatCLIPDotProducts[idx];
 
     _SplatViewData[idx] = view;
 }
@@ -759,7 +763,6 @@ void CSCopySplats (uint3 id : SV_DispatchThreadID)
 }
 
 
-RWStructuredBuffer<float> _SplatCLIPDotProducts;
 StructuredBuffer<float> _CLIPQueryVector; // N-dimensional vector stored as contiguous floats
 uint _CLIPQueryVectorDim; // number of components in _CLIPVector
 
@@ -778,6 +781,7 @@ void CSPrecomputeCLIPDotProducts (uint3 id : SV_DispatchThreadID)
         float queryComp = _CLIPQueryVector[i];
         dotProduct += queryComp * src.sh.col[i % 3]; // cycle through r,g,b for higher dimensions
     }
+    dotProduct = _CLIPQueryVector[0];
 
     _SplatCLIPDotProducts[idx] = dotProduct;
 }

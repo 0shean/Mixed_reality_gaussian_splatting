@@ -611,6 +611,9 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeIntParam(m_CSSplatUtilities, Props.SHOrder, m_SHOrder);
             cmb.SetComputeIntParam(m_CSSplatUtilities, Props.SHOnly, m_SHOnly ? 1 : 0);
 
+            // Also include the GPU CLIP dot products;
+            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, Shader.PropertyToID("_SplatCLIPDotProducts"), m_GpuCLIPDotProducts);
+
             m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.CalcViewData, out uint gsX, out _, out _);
             cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, (m_GpuView.count + (int)gsX - 1)/(int)gsX, 1, 1);
         }
@@ -1049,7 +1052,12 @@ namespace GaussianSplatting.Runtime
 
         public void ProcessCLIPQuery(string clipText)
         {
-            float[] clipQueryVector = new float[] { 0.1f, 0.2f, 0.3f }; // TODO: get real CLIP vector from text
+            float[] clipQueryVector = { 1f, 0f, 0f }; // TODO: get real CLIP vector from text
+
+            // Convert clipText into dummy 3 length vector based on the characters.
+            // 0 to 1 based on the first character's ASCII value mod 10.
+            clipQueryVector[0] = clipText[0] % 10 / 10.0f;
+
             PrecomputeCLIPQueryDotProducts(clipQueryVector);
         }
 
@@ -1074,8 +1082,6 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.PrecomputeCLIPDotProducts, "_CLIPQueryVector", clipQueryBuffer);
 
             DispatchUtilsAndExecute(cmb, KernelIndices.PrecomputeCLIPDotProducts, m_SplatCount);
-
-            // Get this into a render texture so we can visualize it if needed.
 
             clipQueryBuffer.Release();
         }
