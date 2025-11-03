@@ -14,16 +14,13 @@ using UnityEngine.Assertions;
 namespace GaussianSplatting.Editor.Utils
 {
     // input file splat data is read into this format
-    public struct InputSplatData
+    public unsafe struct InputSplatData
     {
         public Vector3 pos;
         public Vector3 nor;
         public Vector3 dc0;
         public Vector3 sh1, sh2, sh3, sh4, sh5, sh6, sh7, sh8, sh9, shA, shB, shC, shD, shE, shF;
-        public float lang_logit0, lang_logit1, lang_logit2, lang_logit3, lang_logit4, lang_logit5, lang_logit6, lang_logit7, lang_logit8, lang_logit9, lang_logit10, lang_logit11, lang_logit12, lang_logit13, lang_logit14, lang_logit15;
-        public float lang_logit16, lang_logit17, lang_logit18, lang_logit19, lang_logit20, lang_logit21, lang_logit22, lang_logit23, lang_logit24, lang_logit25, lang_logit26, lang_logit27, lang_logit28, lang_logit29, lang_logit30, lang_logit31;
-        public float lang_logit32, lang_logit33, lang_logit34, lang_logit35, lang_logit36, lang_logit37, lang_logit38, lang_logit39, lang_logit40, lang_logit41, lang_logit42, lang_logit43, lang_logit44, lang_logit45, lang_logit46, lang_logit47;
-        public float lang_logit48, lang_logit49, lang_logit50, lang_logit51, lang_logit52, lang_logit53, lang_logit54, lang_logit55, lang_logit56, lang_logit57, lang_logit58, lang_logit59, lang_logit60, lang_logit61, lang_logit62, lang_logit63;
+        public fixed float langFeatLogits[64];
         public float opacity;
         public Vector3 scale;
         public Quaternion rot;
@@ -219,7 +216,7 @@ namespace GaussianSplatting.Editor.Utils
                 "rot_0",
                 "rot_1",
                 "rot_2",
-                "rot_3",                
+                "rot_3",
             };
             Assert.AreEqual(UnsafeUtility.SizeOf<InputSplatData>() / 4, splatAttributes.Length);
             NativeArray<int> srcOffsets = new NativeArray<int>(splatAttributes.Length, Allocator.Temp);
@@ -229,7 +226,7 @@ namespace GaussianSplatting.Editor.Utils
                 int attrOffset = attrIndex >= 0 ? fileAttrOffsets[attrIndex] : -1;
                 srcOffsets[ai] = attrOffset;
             }
-            
+
             NativeArray<InputSplatData> dst = new NativeArray<InputSplatData>(count, Allocator.Persistent);
             ReorderPLYData(count, (byte*)input.GetUnsafeReadOnlyPtr(), stride, (byte*)dst.GetUnsafePtr(), UnsafeUtility.SizeOf<InputSplatData>(), (int*)srcOffsets.GetUnsafeReadOnlyPtr());
             return dst;
