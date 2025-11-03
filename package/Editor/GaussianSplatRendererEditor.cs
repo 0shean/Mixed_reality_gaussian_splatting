@@ -145,6 +145,17 @@ namespace GaussianSplatting.Editor
                 MultiEditGUI();
             }
 
+            EditorGUILayout.Space();
+            string editorText = EditorGUILayout.TextField("CLIP query", editorText);
+            if (GUILayout.Button("Recompute similarities"))
+            {
+                // Safely call a method on the component if present. Replace "OnEditorText" with the actual method name.
+                // gs.SendMessage("OnEditorText", editorText, SendMessageOptions.DontRequireReceiver);
+                // EditorPrefs.SetString("nesnausk.GaussianSplatting.EditorText", editorText);
+
+            }
+            EditorGUILayout.EndHorizontal();
+
             serializedObject.ApplyModifiedProperties();
         }
 

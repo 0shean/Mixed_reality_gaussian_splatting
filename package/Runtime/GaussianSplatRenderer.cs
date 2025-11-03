@@ -261,6 +261,7 @@ namespace GaussianSplatting.Runtime
         internal bool m_GpuChunksValid;
         internal GraphicsBuffer m_GpuView;
         internal GraphicsBuffer m_GpuIndexBuffer;
+        internal GraphicsBuffer m_GpuCLIPDotProducts;
 
         // these buffers are only for splat editing, and are lazily created
         GraphicsBuffer m_GpuEditCutouts;
@@ -416,6 +417,9 @@ namespace GaussianSplatting.Runtime
                 0, 4, 1, 4, 5, 1,
                 2, 3, 6, 3, 7, 6
             });
+            // Initialize the vector to store the dot products between the CLIP query vector
+            // and the language features embedded for each Gaussian.
+            m_GpuCLIPDotProducts = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.splatCount, 4);
 
             InitSortBuffers(splatCount);
         }
@@ -1038,6 +1042,14 @@ namespace GaussianSplatting.Runtime
                 dst.splatCount,
                 copySrcStartIndex, copyDstStartIndex, copyCount);
             dst.editModified = true;
+        }
+
+        public void PrecomputeCLIPQueryDotProducts()
+        {
+            // Input: 512-dim CLIP query float vector. Buffer with N language feature vectors
+            // Output: N dot products between query and Gaussian language feature vectors
+            // The output will lie in a structured compute buffer.
+
         }
 
         public void EditCopySplats(
