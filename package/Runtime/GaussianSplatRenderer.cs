@@ -1057,6 +1057,8 @@ namespace GaussianSplatting.Runtime
             // Convert clipText into dummy 3 length vector based on the characters.
             // 0 to 1 based on the first character's ASCII value mod 10.
             clipQueryVector[0] = clipText[0] % 10 / 10.0f;
+            clipQueryVector[1] = clipText[1] % 5 / 5.0f;
+            clipQueryVector[2] = clipText[2] % 7 / 7.0f;
 
             PrecomputeCLIPQueryDotProducts(clipQueryVector);
         }

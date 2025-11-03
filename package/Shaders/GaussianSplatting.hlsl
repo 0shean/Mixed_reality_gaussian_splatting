@@ -215,6 +215,17 @@ struct SplatData
     SplatSHData sh;
 };
 
+
+// Approximate the Jet heatmap color.
+float3 HeatmapColor(float t)
+{
+    float3 c = float3(0,0,0);
+    c.r = saturate(1.5 - abs(4.0 * t - 3.0));
+    c.g = saturate(1.5 - abs(4.0 * t - 2.0));
+    c.b = saturate(1.5 - abs(4.0 * t - 1.0));
+    return c;
+}
+
 // Decode quaternion from a "smallest 3" e.g. 10.10.10.2 format
 float4 DecodeRotation(float4 pq)
 {

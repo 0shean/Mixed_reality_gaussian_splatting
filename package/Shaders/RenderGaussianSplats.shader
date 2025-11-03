@@ -50,9 +50,7 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 		o.col.b = f16tof32(view.color.y >> 16);
 
 		// Map the dot product to value in [0, 1] (currently could be any value)
-		o.col.r = saturate(view.clipDotProduct);
-		o.col.g = saturate(view.clipDotProduct);
-		o.col.b = saturate(view.clipDotProduct); // store in blue channel for debug purposes
+		o.col.rgb = HeatmapColor(saturate((view.clipDotProduct + 1) * 0.5));
 
 		o.col.a = f16tof32(view.color.y);
 

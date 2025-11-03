@@ -781,7 +781,6 @@ void CSPrecomputeCLIPDotProducts (uint3 id : SV_DispatchThreadID)
         float queryComp = _CLIPQueryVector[i];
         dotProduct += queryComp * src.sh.col[i % 3]; // cycle through r,g,b for higher dimensions
     }
-    dotProduct = _CLIPQueryVector[0];
 
     _SplatCLIPDotProducts[idx] = dotProduct;
 }
