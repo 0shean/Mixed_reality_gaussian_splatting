@@ -49,8 +49,8 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 		o.col.g = f16tof32(view.color.x);
 		o.col.b = f16tof32(view.color.y >> 16);
 
-		// Map the dot product to value in [0, 1] (currently could be any value)
-		o.col.rgb = HeatmapColor(saturate((view.clipDotProduct + 1) * 0.5));
+		// Blend the raw clip dot products together.
+		o.col.rgb = view.clipDotProduct;
 
 		o.col.a = f16tof32(view.color.y);
 
@@ -74,6 +74,12 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 			{
 				o.col.a = -1;
 			}
+		}
+
+		if (view.clipDotProduct < -1 || view.clipDotProduct > 1)
+		{
+			// discard splats with invalid CLIP dot products
+			o.vertex = asfloat(0x7fc00000); // NaN discards the primitive
 		}
 	}
 	FlipProjectionIfBackbuffer(o.vertex);
@@ -107,7 +113,7 @@ half4 frag (v2f i) : SV_Target
     if (alpha < 1.0/255.0)
         discard;
 
-    half4 res = half4(i.col.rgb * alpha, alpha);
+    half4 res = half4(saturate(i.col.rgb * alpha), alpha);
     return res;
 }
 ENDCG

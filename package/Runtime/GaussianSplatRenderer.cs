@@ -1116,6 +1116,7 @@ namespace GaussianSplatting.Runtime
             SetAssetDataOnCS(cmb, KernelIndices.PrecomputeCLIPDotProducts);
 
             cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.PrecomputeCLIPDotProducts, "_SplatCLIPDotProducts", m_GpuCLIPDotProducts);
+            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.PrecomputeCLIPDotProducts, "_SplatLangsplatWeights", m_GpuLangsplatWeights);
             cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.PrecomputeCLIPDotProducts, "_LangSplatCodebook", m_GpuInputCodebook);
             cmb.SetComputeIntParam(m_CSSplatUtilities, "_LangSplatCodebookEntryCount", (int) asset.inputCodebookData.dataSize / sizeof(float) / 512);
 
