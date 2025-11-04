@@ -261,6 +261,9 @@ namespace GaussianSplatting.Runtime
         internal bool m_GpuChunksValid;
         internal GraphicsBuffer m_GpuView;
         internal GraphicsBuffer m_GpuIndexBuffer;
+
+        // Langsplat buffers for rendering CLIP language features.
+        GraphicsBuffer m_GpuInputCodebook;
         internal GraphicsBuffer m_GpuCLIPDotProducts;
 
         // these buffers are only for splat editing, and are lazily created
@@ -384,6 +387,20 @@ namespace GaussianSplatting.Runtime
             m_GpuOtherData.SetData(asset.otherData.GetData<uint>());
             m_GpuSHData = new GraphicsBuffer(GraphicsBuffer.Target.Raw, (int) (asset.shData.dataSize / 4), 4) { name = "GaussianSHData" };
             m_GpuSHData.SetData(asset.shData.GetData<uint>());
+
+            // We will create the buffer of LangSplat coefficients here.
+            // We will also create the sparse codebook for the Language feature basis.
+            // Size of the input codebook is L (codebook size) * 512 floats.
+            int numFloats = (int) asset.inputCodebookData.dataSize / sizeof(float);
+            m_GpuInputCodebook = new GraphicsBuffer(
+                GraphicsBuffer.Target.Structured,
+                numFloats,
+                sizeof(float)
+            ) { name = "GaussianLangsplatCodebook" };
+            m_GpuInputCodebook.SetData(asset.inputCodebookData.GetData<float>());
+            UnityEngine.Debug.Assert(numFloats % 512 == 0, "Input codebook data size is not a multiple of 512 floats.");
+            UnityEngine.Debug.Log($"Created LangSplat codebook buffer with {numFloats / 512} entries.");
+
             var (texWidth, texHeight) = GaussianSplatAsset.CalcTextureSize(asset.splatCount);
             var texFormat = GaussianSplatAsset.ColorFormatToGraphics(asset.colorFormat);
             var tex = new Texture2D(texWidth, texHeight, texFormat, TextureCreationFlags.DontInitializePixels | TextureCreationFlags.IgnoreMipmapLimit | TextureCreationFlags.DontUploadUponCreate) { name = "GaussianColorData" };
@@ -543,6 +560,7 @@ namespace GaussianSplatting.Runtime
             DisposeBuffer(ref m_GpuOtherData);
             DisposeBuffer(ref m_GpuSHData);
             DisposeBuffer(ref m_GpuChunks);
+            DisposeBuffer(ref m_GpuInputCodebook);
 
             DisposeBuffer(ref m_GpuView);
             DisposeBuffer(ref m_GpuIndexBuffer);

@@ -37,6 +37,7 @@ namespace GaussianSplatting.Editor
         readonly FilePickerControl m_FilePicker = new();
 
         [SerializeField] string m_InputFile;
+        [SerializeField] string m_InputCodebookFile;
         [SerializeField] bool m_ImportCameras = true;
 
         [SerializeField] string m_OutputFolder = "Assets/GaussianAssets";
@@ -84,6 +85,10 @@ namespace GaussianSplatting.Editor
             var rect = EditorGUILayout.GetControlRect(true);
             m_InputFile = m_FilePicker.PathFieldGUI(rect, new GUIContent("Input PLY/SPZ File"), m_InputFile, "ply,spz", "PointCloudFile");
             m_ImportCameras = EditorGUILayout.Toggle("Import Cameras", m_ImportCameras);
+
+            EditorGUILayout.Space();
+            rect = EditorGUILayout.GetControlRect(true);
+            m_InputCodebookFile = m_FilePicker.PathFieldGUI(rect, new GUIContent("Input Codebook File"), m_InputCodebookFile, "bin", "LangSplatCodebookFile");
 
             if (m_InputFile != m_PrevFilePath && !string.IsNullOrWhiteSpace(m_InputFile))
             {
@@ -252,6 +257,11 @@ namespace GaussianSplatting.Editor
                 m_ErrorMessage = $"Select input PLY/SPZ file";
                 return;
             }
+            if (string.IsNullOrWhiteSpace(m_InputCodebookFile))
+            {
+                m_ErrorMessage = $"Select input codebook file";
+                return;
+            }
 
             if (string.IsNullOrWhiteSpace(m_OutputFolder) || !m_OutputFolder.StartsWith("Assets/"))
             {
@@ -303,6 +313,7 @@ namespace GaussianSplatting.Editor
             string pathOther = $"{m_OutputFolder}/{baseName}_oth.bytes";
             string pathCol = $"{m_OutputFolder}/{baseName}_col.bytes";
             string pathSh = $"{m_OutputFolder}/{baseName}_shs.bytes";
+            string pathCodebook = $"{m_OutputFolder}/{baseName}_codebook.bytes";
 
             // if we are using full lossless (FP32) data, then do not use any chunking, and keep data as-is
             bool useChunks = isUsingChunks;
@@ -312,6 +323,7 @@ namespace GaussianSplatting.Editor
             CreateOtherData(inputSplats, pathOther, ref dataHash, splatSHIndices);
             CreateColorData(inputSplats, pathCol, ref dataHash);
             CreateSHData(inputSplats, pathSh, ref dataHash, clusteredSHs);
+            CreateInputCodebookData(m_InputCodebookFile, pathCodebook, ref dataHash);
             asset.SetDataHash(dataHash);
 
             splatSHIndices.Dispose();
@@ -327,7 +339,9 @@ namespace GaussianSplatting.Editor
                 AssetDatabase.LoadAssetAtPath<TextAsset>(pathPos),
                 AssetDatabase.LoadAssetAtPath<TextAsset>(pathOther),
                 AssetDatabase.LoadAssetAtPath<TextAsset>(pathCol),
-                AssetDatabase.LoadAssetAtPath<TextAsset>(pathSh));
+                AssetDatabase.LoadAssetAtPath<TextAsset>(pathSh),
+                AssetDatabase.LoadAssetAtPath<TextAsset>(pathCodebook)
+            );
 
             var assetPath = $"{m_OutputFolder}/{baseName}.asset";
             var savedAsset = CreateOrReplaceAsset(asset, assetPath);
@@ -830,6 +844,18 @@ namespace GaussianSplatting.Editor
             fs.Write(data);
 
             data.Dispose();
+        }
+
+        void CreateInputCodebookData(string inputFilePath, string filePath, ref Hash128 dataHash)
+        {
+            if (!File.Exists(inputFilePath))
+                return;
+
+            byte[] fileData = File.ReadAllBytes(inputFilePath);
+            dataHash.Append(fileData);
+
+            using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write);
+            fs.Write(fileData);
         }
 
         void CreateOtherData(NativeArray<InputSplatData> inputSplats, string filePath, ref Hash128 dataHash, NativeArray<int> splatSHIndices)
