@@ -50,7 +50,7 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 		o.col.b = f16tof32(view.color.y >> 16);
 
 		// Blend the raw clip dot products together.
-		o.col.rgb = view.clipDotProduct;
+		// o.col.rgb = view.clipDotProduct;
 
 		o.col.a = f16tof32(view.color.y);
 

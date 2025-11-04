@@ -129,6 +129,7 @@ namespace GaussianSplatting.Runtime
                 {
                     GaussianSplatRenderer.RenderMode.DebugPoints => gs.m_MatDebugPoints,
                     GaussianSplatRenderer.RenderMode.DebugPointIndices => gs.m_MatDebugPoints,
+                    GaussianSplatRenderer.RenderMode.DebugPointCLIPDotProducts => gs.m_MatDebugPoints,
                     GaussianSplatRenderer.RenderMode.DebugBoxes => gs.m_MatDebugBoxes,
                     GaussianSplatRenderer.RenderMode.DebugChunkBounds => gs.m_MatDebugBoxes,
                     _ => gs.m_MatSplats
@@ -148,6 +149,8 @@ namespace GaussianSplatting.Runtime
                 mpb.SetInteger(GaussianSplatRenderer.Props.SHOrder, gs.m_SHOrder);
                 mpb.SetInteger(GaussianSplatRenderer.Props.SHOnly, gs.m_SHOnly ? 1 : 0);
                 mpb.SetInteger(GaussianSplatRenderer.Props.DisplayIndex, gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugPointIndices ? 1 : 0);
+                mpb.SetInteger(Shader.PropertyToID("_DisplayCLIPDotProducts"), gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugPointCLIPDotProducts ? 1 : 0);
+                mpb.SetBuffer(Shader.PropertyToID("_SplatCLIPDotProducts"), gs.m_GpuCLIPDotProducts);
                 mpb.SetInteger(GaussianSplatRenderer.Props.DisplayChunks, gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds ? 1 : 0);
 
                 cmb.BeginSample(s_ProfCalcView);
@@ -221,6 +224,7 @@ namespace GaussianSplatting.Runtime
             Splats,
             DebugPoints,
             DebugPointIndices,
+            DebugPointCLIPDotProducts,
             DebugBoxes,
             DebugChunkBounds,
         }
@@ -1118,7 +1122,9 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.PrecomputeCLIPDotProducts, "_SplatCLIPDotProducts", m_GpuCLIPDotProducts);
             cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.PrecomputeCLIPDotProducts, "_SplatLangsplatWeights", m_GpuLangsplatWeights);
             cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.PrecomputeCLIPDotProducts, "_LangSplatCodebook", m_GpuInputCodebook);
-            cmb.SetComputeIntParam(m_CSSplatUtilities, "_LangSplatCodebookEntryCount", (int) asset.inputCodebookData.dataSize / sizeof(float) / 512);
+            int inputCodebookSize = (int)asset.inputCodebookData.dataSize / sizeof(float) / 512;
+            cmb.SetComputeIntParam(m_CSSplatUtilities, "_LangSplatCodebookEntryCount", inputCodebookSize);
+            UnityEngine.Debug.Log($"Precomputing CLIP query dot products Input codebook size: {inputCodebookSize} entries");
 
             // TODO: get the full CLIP vector and set this.
             cmb.SetComputeIntParam(m_CSSplatUtilities, "_CLIPQueryVectorDim", clipQueryVector.Length);
