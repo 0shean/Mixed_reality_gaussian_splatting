@@ -6,8 +6,10 @@ import clip
 # Load CLIP model
 print('load clip model')
 device = "cuda" if torch.cuda.is_available() else "cpu"
+# Use the same model that they use in the LangSplat paper.
 model, preprocess = clip.load("ViT-B/16", device=device)
 
+# Run the app with the command `uvicorn clip_server:app --host 0.0.0.0 --port 8000 --reload`
 app = FastAPI()
 
 class TextInput(BaseModel):
