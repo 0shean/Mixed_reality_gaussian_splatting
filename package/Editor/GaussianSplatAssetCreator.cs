@@ -314,6 +314,7 @@ namespace GaussianSplatting.Editor
             string pathCol = $"{m_OutputFolder}/{baseName}_col.bytes";
             string pathSh = $"{m_OutputFolder}/{baseName}_shs.bytes";
             string pathCodebook = $"{m_OutputFolder}/{baseName}_codebook.bytes";
+            string pathLangsplatWeights = $"{m_OutputFolder}/{baseName}_langweights.bytes";
 
             // if we are using full lossless (FP32) data, then do not use any chunking, and keep data as-is
             bool useChunks = isUsingChunks;
@@ -324,6 +325,7 @@ namespace GaussianSplatting.Editor
             CreateColorData(inputSplats, pathCol, ref dataHash);
             CreateSHData(inputSplats, pathSh, ref dataHash, clusteredSHs);
             CreateInputCodebookData(m_InputCodebookFile, pathCodebook, ref dataHash);
+            CreateLangsplatWeightsData(inputSplats, pathLangsplatWeights, ref dataHash);
             asset.SetDataHash(dataHash);
 
             splatSHIndices.Dispose();
@@ -340,7 +342,8 @@ namespace GaussianSplatting.Editor
                 AssetDatabase.LoadAssetAtPath<TextAsset>(pathOther),
                 AssetDatabase.LoadAssetAtPath<TextAsset>(pathCol),
                 AssetDatabase.LoadAssetAtPath<TextAsset>(pathSh),
-                AssetDatabase.LoadAssetAtPath<TextAsset>(pathCodebook)
+                AssetDatabase.LoadAssetAtPath<TextAsset>(pathCodebook),
+                AssetDatabase.LoadAssetAtPath<TextAsset>(pathLangsplatWeights)
             );
 
             var assetPath = $"{m_OutputFolder}/{baseName}.asset";
@@ -856,6 +859,33 @@ namespace GaussianSplatting.Editor
 
             using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write);
             fs.Write(fileData);
+        }
+
+        unsafe void CreateLangsplatWeightsData(NativeArray<InputSplatData> inputSplats, string filePath, ref Hash128 dataHash)
+        {
+            int dataLen = inputSplats.Length * sizeof(float) * 64;
+            dataLen = NextMultipleOf(dataLen, 8); // serialized as ulong
+            NativeArray<byte> data = new(dataLen, Allocator.TempJob);
+
+            // Look how sexy this is... :)
+            for (int i = 0; i < inputSplats.Length; ++i)
+            {
+                InputSplatData s = inputSplats[i]; // ✅ local copy
+                byte* outputPtr = (byte*)data.GetUnsafePtr() + i * sizeof(float) * 64;
+
+                for (int j = 0; j < 64; ++j)
+                {
+                    *(float*)outputPtr = s.langFeatLogits[j];
+                    outputPtr += sizeof(float);
+                }
+            }
+
+            dataHash.Append(data);
+
+            using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write);
+            fs.Write(data);
+
+            data.Dispose();
         }
 
         void CreateOtherData(NativeArray<InputSplatData> inputSplats, string filePath, ref Hash128 dataHash, NativeArray<int> splatSHIndices)

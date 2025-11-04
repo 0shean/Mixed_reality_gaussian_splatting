@@ -251,6 +251,7 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         view.color.y = (f32tof16(col.b) << 16) | f32tof16(col.a);
     }
 
+    // Store the precomputed CLIP dot product to be rendered later.
     view.clipDotProduct = _SplatCLIPDotProducts[idx];
 
     _SplatViewData[idx] = view;
@@ -763,8 +764,10 @@ void CSCopySplats (uint3 id : SV_DispatchThreadID)
 }
 
 
-StructuredBuffer<float> _CLIPQueryVector; // N-dimensional vector stored as contiguous floats
-uint _CLIPQueryVectorDim; // number of components in _CLIPVector
+StructuredBuffer<float> _CLIPQueryVector; // N-dimensional vector stored as contiguous floats (512)
+uint _CLIPQueryVectorDim; // number of components in _CLIPVector (512)
+StructuredBuffer<float> _LangSplatCodebook; // codebook entries stored as contiguous floats (L x 512)
+uint _LangSplatCodebookEntryCount; // number of codebook entries (L)
 
 [numthreads(GROUP_SIZE,1,1)]
 void CSPrecomputeCLIPDotProducts (uint3 id : SV_DispatchThreadID)
@@ -773,8 +776,9 @@ void CSPrecomputeCLIPDotProducts (uint3 id : SV_DispatchThreadID)
     if (idx >= _SplatCount)
         return;
     SplatData src = LoadSplatData(idx);
+    // We still need to load the weight coefficients for each splat.
 
-    // Dot produt between the CLIPQueryVector and each component of SplatData src.
+    // Dot produt between the CLIPQueryVector and each input codebook.
     float dotProduct = 0.0;
     for (uint i = 0; i < _CLIPQueryVectorDim; ++i)
     {
