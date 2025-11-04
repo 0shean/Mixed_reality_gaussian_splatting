@@ -2,6 +2,8 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading.Tasks;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
@@ -679,7 +681,7 @@ namespace GaussianSplatting.Runtime
                 }
                 else
                 {
-                    Debug.LogError($"{nameof(GaussianSplatRenderer)} component is not set up correctly (Resource references are missing), or platform does not support compute shaders");
+                    UnityEngine.Debug.LogError($"{nameof(GaussianSplatRenderer)} component is not set up correctly (Resource references are missing), or platform does not support compute shaders");
                 }
             }
         }
@@ -988,12 +990,12 @@ namespace GaussianSplatting.Runtime
         {
             if (newSplatCount <= 0 || newSplatCount > GaussianSplatAsset.kMaxSplats)
             {
-                Debug.LogError($"Invalid new splat count: {newSplatCount}");
+                UnityEngine.Debug.LogError($"Invalid new splat count: {newSplatCount}");
                 return;
             }
             if (asset.chunkData != null)
             {
-                Debug.LogError("Only splats with VeryHigh quality can be resized");
+                UnityEngine.Debug.LogError("Only splats with VeryHigh quality can be resized");
                 return;
             }
             if (newSplatCount == splatCount)
@@ -1068,17 +1070,26 @@ namespace GaussianSplatting.Runtime
             dst.editModified = true;
         }
 
-        public void ProcessCLIPQuery(string clipText)
+        public async Task ProcessCLIPQuery(string clipText)
         {
-            float[] clipQueryVector = { 1f, 0f, 0f }; // TODO: get real CLIP vector from text
+            var clipClient = GetComponent<ClipClient>();
+            if (clipClient == null)
+            {
+                UnityEngine.Debug.LogError("ClipClient component not found on this GameObject!");
+                return;
+            }
 
-            // Convert clipText into dummy 3 length vector based on the characters.
-            // 0 to 1 based on the first character's ASCII value mod 10.
-            clipQueryVector[0] = clipText[0] % 10 / 10.0f;
-            clipQueryVector[1] = clipText[1] % 5 / 5.0f;
-            clipQueryVector[2] = clipText[2] % 7 / 7.0f;
+            float[] embedding = await clipClient.RequestEmbeddingAsync(clipText);
 
-            PrecomputeCLIPQueryDotProducts(clipQueryVector);
+            if (embedding != null)
+            {
+                UnityEngine.Debug.Log($"Received CLIP embedding for query '{clipText}' (length: {embedding.Length})");
+                // Example: PrecomputeCLIPQueryDotProducts(embedding);
+            }
+            else
+            {
+                UnityEngine.Debug.LogError($"Failed to get CLIP embedding for query '{clipText}'");
+            }
         }
 
         public void PrecomputeCLIPQueryDotProducts(float[] clipQueryVector)
