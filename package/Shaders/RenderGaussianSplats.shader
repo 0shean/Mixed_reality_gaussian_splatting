@@ -10,7 +10,7 @@ Shader "Gaussian Splatting/Render Splats"
             ZWrite Off
             Blend OneMinusDstAlpha One
             Cull Off
-            
+
 CGPROGRAM
 #pragma vertex vert
 #pragma fragment frag
@@ -48,6 +48,10 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 		o.col.r = f16tof32(view.color.x >> 16);
 		o.col.g = f16tof32(view.color.x);
 		o.col.b = f16tof32(view.color.y >> 16);
+
+		// Blend the raw clip dot products together.
+		// o.col.rgb = view.clipDotProduct;
+
 		o.col.a = f16tof32(view.color.y);
 
 		uint idx = vtxID;
@@ -68,8 +72,14 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 			uint selVal = _SplatSelectedBits.Load(wordIdx * 4);
 			if (selVal & (1 << bitIdx))
 			{
-				o.col.a = -1;				
+				o.col.a = -1;
 			}
+		}
+
+		if (view.clipDotProduct < -1 || view.clipDotProduct > 1)
+		{
+			// discard splats with invalid CLIP dot products
+			o.vertex = asfloat(0x7fc00000); // NaN discards the primitive
 		}
 	}
 	FlipProjectionIfBackbuffer(o.vertex);
@@ -99,11 +109,11 @@ half4 frag (v2f i) : SV_Target
 		}
 		i.col.rgb = lerp(i.col.rgb, selectedColor, 0.5);
 	}
-	
+
     if (alpha < 1.0/255.0)
         discard;
 
-    half4 res = half4(i.col.rgb * alpha, alpha);
+    half4 res = half4(saturate(i.col.rgb * alpha), alpha);
     return res;
 }
 ENDCG

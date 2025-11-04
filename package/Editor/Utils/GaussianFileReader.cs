@@ -14,12 +14,13 @@ using UnityEngine.Assertions;
 namespace GaussianSplatting.Editor.Utils
 {
     // input file splat data is read into this format
-    public struct InputSplatData
+    public unsafe struct InputSplatData
     {
         public Vector3 pos;
         public Vector3 nor;
         public Vector3 dc0;
         public Vector3 sh1, sh2, sh3, sh4, sh5, sh6, sh7, sh8, sh9, shA, shB, shC, shD, shE, shF;
+        public fixed float langFeatLogits[64];
         public float opacity;
         public Vector3 scale;
         public Quaternion rot;
@@ -144,6 +145,70 @@ namespace GaussianSplatting.Editor.Utils
                 "f_rest_42",
                 "f_rest_43",
                 "f_rest_44",
+                "lang_feat_logit_0",
+                "lang_feat_logit_1",
+                "lang_feat_logit_2",
+                "lang_feat_logit_3",
+                "lang_feat_logit_4",
+                "lang_feat_logit_5",
+                "lang_feat_logit_6",
+                "lang_feat_logit_7",
+                "lang_feat_logit_8",
+                "lang_feat_logit_9",
+                "lang_feat_logit_10",
+                "lang_feat_logit_11",
+                "lang_feat_logit_12",
+                "lang_feat_logit_13",
+                "lang_feat_logit_14",
+                "lang_feat_logit_15",
+                "lang_feat_logit_16",
+                "lang_feat_logit_17",
+                "lang_feat_logit_18",
+                "lang_feat_logit_19",
+                "lang_feat_logit_20",
+                "lang_feat_logit_21",
+                "lang_feat_logit_22",
+                "lang_feat_logit_23",
+                "lang_feat_logit_24",
+                "lang_feat_logit_25",
+                "lang_feat_logit_26",
+                "lang_feat_logit_27",
+                "lang_feat_logit_28",
+                "lang_feat_logit_29",
+                "lang_feat_logit_30",
+                "lang_feat_logit_31",
+                "lang_feat_logit_32",
+                "lang_feat_logit_33",
+                "lang_feat_logit_34",
+                "lang_feat_logit_35",
+                "lang_feat_logit_36",
+                "lang_feat_logit_37",
+                "lang_feat_logit_38",
+                "lang_feat_logit_39",
+                "lang_feat_logit_40",
+                "lang_feat_logit_41",
+                "lang_feat_logit_42",
+                "lang_feat_logit_43",
+                "lang_feat_logit_44",
+                "lang_feat_logit_45",
+                "lang_feat_logit_46",
+                "lang_feat_logit_47",
+                "lang_feat_logit_48",
+                "lang_feat_logit_49",
+                "lang_feat_logit_50",
+                "lang_feat_logit_51",
+                "lang_feat_logit_52",
+                "lang_feat_logit_53",
+                "lang_feat_logit_54",
+                "lang_feat_logit_55",
+                "lang_feat_logit_56",
+                "lang_feat_logit_57",
+                "lang_feat_logit_58",
+                "lang_feat_logit_59",
+                "lang_feat_logit_60",
+                "lang_feat_logit_61",
+                "lang_feat_logit_62",
+                "lang_feat_logit_63",
                 "opacity",
                 "scale_0",
                 "scale_1",
@@ -151,7 +216,7 @@ namespace GaussianSplatting.Editor.Utils
                 "rot_0",
                 "rot_1",
                 "rot_2",
-                "rot_3",                
+                "rot_3",
             };
             Assert.AreEqual(UnsafeUtility.SizeOf<InputSplatData>() / 4, splatAttributes.Length);
             NativeArray<int> srcOffsets = new NativeArray<int>(splatAttributes.Length, Allocator.Temp);
@@ -161,7 +226,7 @@ namespace GaussianSplatting.Editor.Utils
                 int attrOffset = attrIndex >= 0 ? fileAttrOffsets[attrIndex] : -1;
                 srcOffsets[ai] = attrOffset;
             }
-            
+
             NativeArray<InputSplatData> dst = new NativeArray<InputSplatData>(count, Allocator.Persistent);
             ReorderPLYData(count, (byte*)input.GetUnsafeReadOnlyPtr(), stride, (byte*)dst.GetUnsafePtr(), UnsafeUtility.SizeOf<InputSplatData>(), (int*)srcOffsets.GetUnsafeReadOnlyPtr());
             return dst;

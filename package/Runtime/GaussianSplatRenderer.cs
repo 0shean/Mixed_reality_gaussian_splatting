@@ -2,6 +2,8 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading.Tasks;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
@@ -127,6 +129,7 @@ namespace GaussianSplatting.Runtime
                 {
                     GaussianSplatRenderer.RenderMode.DebugPoints => gs.m_MatDebugPoints,
                     GaussianSplatRenderer.RenderMode.DebugPointIndices => gs.m_MatDebugPoints,
+                    GaussianSplatRenderer.RenderMode.DebugPointCLIPDotProducts => gs.m_MatDebugPoints,
                     GaussianSplatRenderer.RenderMode.DebugBoxes => gs.m_MatDebugBoxes,
                     GaussianSplatRenderer.RenderMode.DebugChunkBounds => gs.m_MatDebugBoxes,
                     _ => gs.m_MatSplats
@@ -146,6 +149,8 @@ namespace GaussianSplatting.Runtime
                 mpb.SetInteger(GaussianSplatRenderer.Props.SHOrder, gs.m_SHOrder);
                 mpb.SetInteger(GaussianSplatRenderer.Props.SHOnly, gs.m_SHOnly ? 1 : 0);
                 mpb.SetInteger(GaussianSplatRenderer.Props.DisplayIndex, gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugPointIndices ? 1 : 0);
+                mpb.SetInteger(Shader.PropertyToID("_DisplayCLIPDotProducts"), gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugPointCLIPDotProducts ? 1 : 0);
+                mpb.SetBuffer(Shader.PropertyToID("_SplatCLIPDotProducts"), gs.m_GpuCLIPDotProducts);
                 mpb.SetInteger(GaussianSplatRenderer.Props.DisplayChunks, gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds ? 1 : 0);
 
                 cmb.BeginSample(s_ProfCalcView);
@@ -219,6 +224,7 @@ namespace GaussianSplatting.Runtime
             Splats,
             DebugPoints,
             DebugPointIndices,
+            DebugPointCLIPDotProducts,
             DebugBoxes,
             DebugChunkBounds,
         }
@@ -261,6 +267,11 @@ namespace GaussianSplatting.Runtime
         internal bool m_GpuChunksValid;
         internal GraphicsBuffer m_GpuView;
         internal GraphicsBuffer m_GpuIndexBuffer;
+
+        // Langsplat buffers for rendering CLIP language features.
+        GraphicsBuffer m_GpuInputCodebook;
+        GraphicsBuffer m_GpuLangsplatWeights;
+        internal GraphicsBuffer m_GpuCLIPDotProducts;
 
         // these buffers are only for splat editing, and are lazily created
         GraphicsBuffer m_GpuEditCutouts;
@@ -356,6 +367,7 @@ namespace GaussianSplatting.Runtime
             ScaleSelection,
             ExportData,
             CopySplats,
+            PrecomputeCLIPDotProducts,
         }
 
         public bool HasValidAsset =>
@@ -368,7 +380,7 @@ namespace GaussianSplatting.Runtime
             m_Asset.colorData != null;
         public bool HasValidRenderSetup => m_GpuPosData != null && m_GpuOtherData != null && m_GpuChunks != null;
 
-        const int kGpuViewDataSize = 40;
+        const int kGpuViewDataSize = 48;
 
         void CreateResourcesForAsset()
         {
@@ -382,6 +394,32 @@ namespace GaussianSplatting.Runtime
             m_GpuOtherData.SetData(asset.otherData.GetData<uint>());
             m_GpuSHData = new GraphicsBuffer(GraphicsBuffer.Target.Raw, (int) (asset.shData.dataSize / 4), 4) { name = "GaussianSHData" };
             m_GpuSHData.SetData(asset.shData.GetData<uint>());
+
+            // We will create the buffer of LangSplat coefficients here.
+            // We will also create the sparse codebook for the Language feature basis.
+            // Size of the input codebook is L (codebook size) * 512 floats.
+            int numFloats = (int) asset.inputCodebookData.dataSize / sizeof(float);
+            m_GpuInputCodebook = new GraphicsBuffer(
+                GraphicsBuffer.Target.Structured,
+                numFloats,
+                sizeof(float)
+            ) { name = "GaussianLangsplatCodebook" };
+            m_GpuInputCodebook.SetData(asset.inputCodebookData.GetData<float>());
+            UnityEngine.Debug.Assert(numFloats % 512 == 0, "Input codebook data size is not a multiple of 512 floats.");
+            UnityEngine.Debug.Log($"Created LangSplat codebook buffer with {numFloats / 512} entries.");
+
+            // asset.langsplatWeightsData
+            m_GpuLangsplatWeights = new GraphicsBuffer(
+                GraphicsBuffer.Target.Structured,
+                (int)(asset.langsplatWeightsData.dataSize / sizeof(float)),
+                sizeof(float)
+            ) { name = "GaussianLangsplatWeights" };
+            m_GpuLangsplatWeights.SetData(asset.langsplatWeightsData.GetData<float>());
+            UnityEngine.Debug.Log($"Created LangSplat weights buffer with {m_GpuLangsplatWeights.count} floats.");
+            // This assumes that the number of coefficients per splat is 64.
+            UnityEngine.Debug.Assert(m_GpuLangsplatWeights.count / 64 == m_SplatCount, "Splat count does not match LangSplat num splats.");
+
+
             var (texWidth, texHeight) = GaussianSplatAsset.CalcTextureSize(asset.splatCount);
             var texFormat = GaussianSplatAsset.ColorFormatToGraphics(asset.colorFormat);
             var tex = new Texture2D(texWidth, texHeight, texFormat, TextureCreationFlags.DontInitializePixels | TextureCreationFlags.IgnoreMipmapLimit | TextureCreationFlags.DontUploadUponCreate) { name = "GaussianColorData" };
@@ -416,6 +454,9 @@ namespace GaussianSplatting.Runtime
                 0, 4, 1, 4, 5, 1,
                 2, 3, 6, 3, 7, 6
             });
+            // Initialize the vector to store the dot products between the CLIP query vector
+            // and the language features embedded for each Gaussian.
+            m_GpuCLIPDotProducts = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.splatCount, 4);
 
             InitSortBuffers(splatCount);
         }
@@ -538,11 +579,14 @@ namespace GaussianSplatting.Runtime
             DisposeBuffer(ref m_GpuOtherData);
             DisposeBuffer(ref m_GpuSHData);
             DisposeBuffer(ref m_GpuChunks);
+            DisposeBuffer(ref m_GpuInputCodebook);
+            DisposeBuffer(ref m_GpuLangsplatWeights);
 
             DisposeBuffer(ref m_GpuView);
             DisposeBuffer(ref m_GpuIndexBuffer);
             DisposeBuffer(ref m_GpuSortDistances);
             DisposeBuffer(ref m_GpuSortKeys);
+            DisposeBuffer(ref m_GpuCLIPDotProducts);
 
             DisposeBuffer(ref m_GpuEditSelectedMouseDown);
             DisposeBuffer(ref m_GpuEditPosMouseDown);
@@ -605,6 +649,9 @@ namespace GaussianSplatting.Runtime
             cmb.SetComputeIntParam(m_CSSplatUtilities, Props.SHOrder, m_SHOrder);
             cmb.SetComputeIntParam(m_CSSplatUtilities, Props.SHOnly, m_SHOnly ? 1 : 0);
 
+            // Also include the GPU CLIP dot products;
+            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, Shader.PropertyToID("_SplatCLIPDotProducts"), m_GpuCLIPDotProducts);
+
             m_CSSplatUtilities.GetKernelThreadGroupSizes((int)KernelIndices.CalcViewData, out uint gsX, out _, out _);
             cmb.DispatchCompute(m_CSSplatUtilities, (int)KernelIndices.CalcViewData, (m_GpuView.count + (int)gsX - 1)/(int)gsX, 1, 1);
         }
@@ -652,7 +699,7 @@ namespace GaussianSplatting.Runtime
                 }
                 else
                 {
-                    Debug.LogError($"{nameof(GaussianSplatRenderer)} component is not set up correctly (Resource references are missing), or platform does not support compute shaders");
+                    UnityEngine.Debug.LogError($"{nameof(GaussianSplatRenderer)} component is not set up correctly (Resource references are missing), or platform does not support compute shaders");
                 }
             }
         }
@@ -961,12 +1008,12 @@ namespace GaussianSplatting.Runtime
         {
             if (newSplatCount <= 0 || newSplatCount > GaussianSplatAsset.kMaxSplats)
             {
-                Debug.LogError($"Invalid new splat count: {newSplatCount}");
+                UnityEngine.Debug.LogError($"Invalid new splat count: {newSplatCount}");
                 return;
             }
             if (asset.chunkData != null)
             {
-                Debug.LogError("Only splats with VeryHigh quality can be resized");
+                UnityEngine.Debug.LogError("Only splats with VeryHigh quality can be resized");
                 return;
             }
             if (newSplatCount == splatCount)
@@ -1009,6 +1056,7 @@ namespace GaussianSplatting.Runtime
             m_GpuSHData.Dispose();
             DestroyImmediate(m_GpuColorData);
             m_GpuView.Dispose();
+            // TODO: reset the dot products buffer too.
 
             m_GpuEditSelected?.Dispose();
             m_GpuEditSelectedMouseDown?.Dispose();
@@ -1038,6 +1086,58 @@ namespace GaussianSplatting.Runtime
                 dst.splatCount,
                 copySrcStartIndex, copyDstStartIndex, copyCount);
             dst.editModified = true;
+        }
+
+        public async Task ProcessCLIPQuery(string clipText)
+        {
+            var clipClient = GetComponent<ClipClient>();
+            if (clipClient == null)
+            {
+                UnityEngine.Debug.LogError("ClipClient component not found on this GameObject!");
+                return;
+            }
+
+            float[] embedding = await clipClient.RequestEmbeddingAsync(clipText);
+
+            if (embedding != null)
+            {
+                UnityEngine.Debug.Log($"Received CLIP embedding for query '{clipText}' (length: {embedding.Length})");
+                PrecomputeCLIPQueryDotProducts(embedding);
+            }
+            else
+            {
+                UnityEngine.Debug.LogError($"Failed to get CLIP embedding for query '{clipText}'");
+            }
+        }
+
+        public void PrecomputeCLIPQueryDotProducts(float[] clipQueryVector)
+        {
+            // Input: 512-dim CLIP query float vector. Buffer with N language feature vectors
+            // Output: N dot products between query and Gaussian language feature vectors
+            // The output will lie in a structured compute buffer.
+            using var cmb = new CommandBuffer { name = "PrecomputeCLIPDotProducts" };
+
+            SetAssetDataOnCS(cmb, KernelIndices.PrecomputeCLIPDotProducts);
+
+            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.PrecomputeCLIPDotProducts, "_SplatCLIPDotProducts", m_GpuCLIPDotProducts);
+            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.PrecomputeCLIPDotProducts, "_SplatLangsplatWeights", m_GpuLangsplatWeights);
+            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.PrecomputeCLIPDotProducts, "_LangSplatCodebook", m_GpuInputCodebook);
+            int inputCodebookSize = (int)asset.inputCodebookData.dataSize / sizeof(float) / 512;
+            cmb.SetComputeIntParam(m_CSSplatUtilities, "_LangSplatCodebookEntryCount", inputCodebookSize);
+            UnityEngine.Debug.Log($"Precomputing CLIP query dot products Input codebook size: {inputCodebookSize} entries");
+
+            // TODO: get the full CLIP vector and set this.
+            cmb.SetComputeIntParam(m_CSSplatUtilities, "_CLIPQueryVectorDim", clipQueryVector.Length);
+
+            // Create structured buffer of floats that stores the CLIP vector and pass to the compute buffer.
+            // Initialize GraphicsBuffer with the query vector data.
+            ComputeBuffer clipQueryBuffer = new ComputeBuffer(clipQueryVector.Length, sizeof(float));
+            clipQueryBuffer.SetData(clipQueryVector);
+            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.PrecomputeCLIPDotProducts, "_CLIPQueryVector", clipQueryBuffer);
+
+            DispatchUtilsAndExecute(cmb, KernelIndices.PrecomputeCLIPDotProducts, m_SplatCount);
+
+            clipQueryBuffer.Release();
         }
 
         public void EditCopySplats(

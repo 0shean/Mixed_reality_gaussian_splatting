@@ -9,7 +9,7 @@ Shader "Gaussian Splatting/Debug/Render Points"
         {
             ZWrite On
             Cull Off
-            
+
 CGPROGRAM
 #pragma vertex vert
 #pragma fragment frag
@@ -26,6 +26,8 @@ struct v2f
 
 float _SplatSize;
 bool _DisplayIndex;
+bool _DisplayCLIPDotProducts;
+StructuredBuffer<float> _SplatCLIPDotProducts;
 int _SplatCount;
 
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
@@ -51,6 +53,22 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
         o.color.r = frac((float)splatIndex / (float)_SplatCount * 100);
         o.color.g = frac((float)splatIndex / (float)_SplatCount * 10);
         o.color.b = (float)splatIndex / (float)_SplatCount;
+    }
+    if (_DisplayCLIPDotProducts)
+    {
+        float clipDot = _SplatCLIPDotProducts[splatIndex];
+        if (clipDot < -1 || clipDot > 1)
+        {
+            o.color = half3(0, 0, 1); // out of range
+        }
+        else
+        {
+            // o.color = saturate(half3((clipDot + 1) * 0.5));
+            // o.color = half3(1, 1, 1);
+            float t = (clipDot + 1) * 0.5;
+            o.color = half3(lerp(1, 0, t), lerp(0, 1, t), 0); // gradient from red to green
+            // green means higher CLIP similarity, red means lower.
+        }
     }
 
     FlipProjectionIfBackbuffer(o.vertex);

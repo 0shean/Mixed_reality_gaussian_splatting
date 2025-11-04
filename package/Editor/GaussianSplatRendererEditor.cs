@@ -45,6 +45,8 @@ namespace GaussianSplatting.Editor
 
         static HashSet<GaussianSplatRendererEditor> s_AllEditors = new();
 
+        string editorCLIPQuery = "";
+
         public static void BumpGUICounter()
         {
             ++s_EditStatsUpdateCounter;
@@ -143,6 +145,13 @@ namespace GaussianSplatting.Editor
             if (validAndEnabled && targets.Length > 1)
             {
                 MultiEditGUI();
+            }
+
+            EditorGUILayout.Space();
+            editorCLIPQuery = EditorGUILayout.TextField("CLIP query", editorCLIPQuery);
+            if (GUILayout.Button("Process CLIP Query"))
+            {
+                gs.ProcessCLIPQuery(editorCLIPQuery);
             }
 
             serializedObject.ApplyModifiedProperties();
