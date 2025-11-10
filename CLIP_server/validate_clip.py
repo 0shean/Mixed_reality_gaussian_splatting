@@ -82,8 +82,8 @@ def debug_clip_logits(ply_path, input_text, logits_prefix="lang_feat_logit"):
             emb = model.encode_text(tokens)
             emb /= emb.norm(dim=-1, keepdim=True)
             emb = emb[0].cpu().numpy()
-            score = np.dot(logits_norm, emb).max()
-            print(f"{word:>6}: max similarity {score:.4f}")
+            dots = np.dot(logits_norm, emb)
+            print(f"{word:>6}: max similarity {dots.max():.4f}, min similarity {dots.min():.4f}")
 
 
 
