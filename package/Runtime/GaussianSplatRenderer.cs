@@ -1164,6 +1164,10 @@ namespace GaussianSplatting.Runtime
             int splatCount = m_SplatCount;
             float[] splatDotProducts = new float[splatCount];
 
+            float globalMin = float.MaxValue;
+            float globalMax = float.MinValue;
+            object minMaxLock = new object(); // lock object
+
             // Parallelize across splats
             Parallel.For(0, splatCount, idx =>
             {
@@ -1171,8 +1175,8 @@ namespace GaussianSplatting.Runtime
                 int threadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
 
                 // Print progress occasionally
-                if (idx % 10000 == 0)
-                    UnityEngine.Debug.Log($"[Thread {threadId}] Processing splat {idx}/{splatCount}");
+                // if (idx % 10000 == 0)
+                //     UnityEngine.Debug.Log($"[Thread {threadId}] Processing splat {idx}/{splatCount}");
 
                 float sum = 0f;
                 for (int chunk = 0; chunk < chunksPerSplat; chunk++)
@@ -1186,13 +1190,26 @@ namespace GaussianSplatting.Runtime
 
                         // Simplified debug version (like your test shader logic):
                         // if (chunkData[chunkOffset + dim] > 0)
-                            // sum += 1f / floatsPerSplat;
+                        // sum += 1f / floatsPerSplat;
                     }
                 }
+                // Print progress occasionally
+                if (idx % 10000 == 0)
+                {
+                    UnityEngine.Debug.Log($"[Thread {threadId}] Processing splat {idx}/{splatCount}");
+                }
+                lock (minMaxLock)
+                {
+                    if (sum < globalMin) globalMin = sum;
+                    if (sum > globalMax) globalMax = sum;
+                }
+
                 splatDotProducts[idx] = sum;
             });
 
             UnityEngine.Debug.Log($"[CPU] Done computing CLIP dot products for {splatCount} splats.");
+            UnityEngine.Debug.Log($"Global min dot product: {globalMin}");
+            UnityEngine.Debug.Log($"Global max dot product: {globalMax}");
 
             // Optionally upload back to GPU, or store for CPU-side filtering:
             m_GpuCLIPDotProducts.SetData(splatDotProducts);
