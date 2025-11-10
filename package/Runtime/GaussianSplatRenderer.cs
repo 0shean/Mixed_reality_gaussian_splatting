@@ -271,6 +271,7 @@ namespace GaussianSplatting.Runtime
         // Langsplat buffers for rendering CLIP language features.
         GraphicsBuffer m_GpuInputCodebook;
         GraphicsBuffer m_GpuLangsplatWeights;
+        GraphicsBuffer[] m_GpuOccamFeatures;
         internal GraphicsBuffer m_GpuCLIPDotProducts;
 
         // these buffers are only for splat editing, and are lazily created
@@ -398,27 +399,46 @@ namespace GaussianSplatting.Runtime
             // We will create the buffer of LangSplat coefficients here.
             // We will also create the sparse codebook for the Language feature basis.
             // Size of the input codebook is L (codebook size) * 512 floats.
-            int numFloats = (int) asset.inputCodebookData.dataSize / sizeof(float);
-            m_GpuInputCodebook = new GraphicsBuffer(
-                GraphicsBuffer.Target.Structured,
-                numFloats,
-                sizeof(float)
-            ) { name = "GaussianLangsplatCodebook" };
-            m_GpuInputCodebook.SetData(asset.inputCodebookData.GetData<float>());
-            UnityEngine.Debug.Assert(numFloats % 512 == 0, "Input codebook data size is not a multiple of 512 floats.");
-            UnityEngine.Debug.Log($"Created LangSplat codebook buffer with {numFloats / 512} entries.");
+            // int numFloats = (int) asset.inputCodebookData.dataSize / sizeof(float);
+            // m_GpuInputCodebook = new GraphicsBuffer(
+            //     GraphicsBuffer.Target.Structured,
+            //     numFloats,
+            //     sizeof(float)
+            // ) { name = "GaussianLangsplatCodebook" };
+            // m_GpuInputCodebook.SetData(asset.inputCodebookData.GetData<float>());
+            // UnityEngine.Debug.Assert(numFloats % 512 == 0, "Input codebook data size is not a multiple of 512 floats.");
+            // UnityEngine.Debug.Log($"Created LangSplat codebook buffer with {numFloats / 512} entries.");
 
             // asset.langsplatWeightsData
-            m_GpuLangsplatWeights = new GraphicsBuffer(
-                GraphicsBuffer.Target.Structured,
-                (int)(asset.langsplatWeightsData.dataSize / sizeof(float)),
-                sizeof(float)
-            ) { name = "GaussianLangsplatWeights" };
-            m_GpuLangsplatWeights.SetData(asset.langsplatWeightsData.GetData<float>());
-            UnityEngine.Debug.Log($"Created LangSplat weights buffer with {m_GpuLangsplatWeights.count} floats.");
-            // This assumes that the number of coefficients per splat is 64.
-            UnityEngine.Debug.Assert(m_GpuLangsplatWeights.count / 64 == m_SplatCount, "Splat count does not match LangSplat num splats.");
-
+            // m_GpuLangsplatWeights = new GraphicsBuffer(
+            //     GraphicsBuffer.Target.Structured,
+            //     (int)(asset.langsplatWeightsData.dataSize / sizeof(float)),
+            //     sizeof(float)
+            // ) { name = "GaussianLangsplatWeights" };
+            // m_GpuLangsplatWeights.SetData(asset.langsplatWeightsData.GetData<float>());
+            // UnityEngine.Debug.Log($"Created LangSplat weights buffer with {m_GpuLangsplatWeights.count} floats.");
+            // // This assumes that the number of coefficients per splat is 64.
+            // UnityEngine.Debug.Assert(m_GpuLangsplatWeights.count / 64 == m_SplatCount, "Splat count does not match LangSplat num splats.");
+            if (asset.occamFeaturesEnabled)
+            {
+                for (int i = 0; i < asset.occamFeatures.Length; i++)
+                {
+                    m_GpuOccamFeatures[i] = new GraphicsBuffer(
+                        GraphicsBuffer.Target.Structured,
+                        (int)(asset.occamFeatures[i].dataSize / sizeof(float)),
+                        sizeof(float)
+                    )
+                    { name = "GaussianOccamFeatures" + i };
+                    // m_GpuOccamFeatures[i].SetData(asset.occamFeatures[i].GetData<float>());
+                    UnityEngine.Debug.Log($"Created OccamFeatures buffer {i} with {m_GpuOccamFeatures[i].count} floats.");
+                    // This assumes that the number of features per splat is 512.
+                    UnityEngine.Debug.Assert(m_GpuOccamFeatures[i].count / 512 * m_GpuOccamFeatures.Length == m_SplatCount, "Splat count does not match OccamFeatures num splats.");
+                }
+            }
+            else
+            {
+                UnityEngine.Debug.Log("No OccamFeatures data found in asset when creating resources.");
+            }
 
             var (texWidth, texHeight) = GaussianSplatAsset.CalcTextureSize(asset.splatCount);
             var texFormat = GaussianSplatAsset.ColorFormatToGraphics(asset.colorFormat);
@@ -582,6 +602,13 @@ namespace GaussianSplatting.Runtime
             DisposeBuffer(ref m_GpuInputCodebook);
             DisposeBuffer(ref m_GpuLangsplatWeights);
 
+            if (m_GpuOccamFeatures != null)
+            {
+                for (int i = 0; i < m_GpuOccamFeatures.Length; i++)
+                {
+                    DisposeBuffer(ref m_GpuOccamFeatures[i]);
+                }
+            }
             DisposeBuffer(ref m_GpuView);
             DisposeBuffer(ref m_GpuIndexBuffer);
             DisposeBuffer(ref m_GpuSortDistances);
@@ -1112,32 +1139,57 @@ namespace GaussianSplatting.Runtime
 
         public void PrecomputeCLIPQueryDotProducts(float[] clipQueryVector)
         {
-            // Input: 512-dim CLIP query float vector. Buffer with N language feature vectors
-            // Output: N dot products between query and Gaussian language feature vectors
-            // The output will lie in a structured compute buffer.
+            if (!asset.occamFeaturesEnabled)
+            {
+                UnityEngine.Debug.LogError("No Occam features data found in the Gaussian Splat Asset!");
+                return;
+            }
+            UnityEngine.Debug.Log("Precomputing CLIP query dot products");
+
+            // Input: 512-dim CLIP query float vector.
+            // Output: N dot products between query and Gaussian language feature vectors.
             using var cmb = new CommandBuffer { name = "PrecomputeCLIPDotProducts" };
 
-            SetAssetDataOnCS(cmb, KernelIndices.PrecomputeCLIPDotProducts);
-
-            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.PrecomputeCLIPDotProducts, "_SplatCLIPDotProducts", m_GpuCLIPDotProducts);
-            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.PrecomputeCLIPDotProducts, "_SplatLangsplatWeights", m_GpuLangsplatWeights);
-            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.PrecomputeCLIPDotProducts, "_LangSplatCodebook", m_GpuInputCodebook);
-            int inputCodebookSize = (int)asset.inputCodebookData.dataSize / sizeof(float) / 512;
-            cmb.SetComputeIntParam(m_CSSplatUtilities, "_LangSplatCodebookEntryCount", inputCodebookSize);
-            UnityEngine.Debug.Log($"Precomputing CLIP query dot products Input codebook size: {inputCodebookSize} entries");
-
-            // TODO: get the full CLIP vector and set this.
-            cmb.SetComputeIntParam(m_CSSplatUtilities, "_CLIPQueryVectorDim", clipQueryVector.Length);
-
-            // Create structured buffer of floats that stores the CLIP vector and pass to the compute buffer.
-            // Initialize GraphicsBuffer with the query vector data.
-            ComputeBuffer clipQueryBuffer = new ComputeBuffer(clipQueryVector.Length, sizeof(float));
+            // Create and upload the CLIP query vector buffer.
+            using ComputeBuffer clipQueryBuffer = new ComputeBuffer(clipQueryVector.Length, sizeof(float));
             clipQueryBuffer.SetData(clipQueryVector);
             cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.PrecomputeCLIPDotProducts, "_CLIPQueryVector", clipQueryBuffer);
 
-            DispatchUtilsAndExecute(cmb, KernelIndices.PrecomputeCLIPDotProducts, m_SplatCount);
+            // Common parameters
+            cmb.SetComputeIntParam(m_CSSplatUtilities, "_CLIPQueryVectorDim", clipQueryVector.Length);
+            cmb.SetComputeBufferParam(m_CSSplatUtilities, (int)KernelIndices.PrecomputeCLIPDotProducts, "_SplatCLIPDotProducts", m_GpuCLIPDotProducts);
 
-            clipQueryBuffer.Release();
+            // Constants
+            const int floatsPerSplat = 512;
+            const int chunksPerSplat = 16;
+            int chunkSize = floatsPerSplat / chunksPerSplat; // 32
+            uint offset = 0;
+
+            for (int i = 0; i < chunksPerSplat; i++)
+            {
+                // Set Occam feature chunk for this dispatch
+                var arr = asset.occamFeatures[i].GetData<float>();
+                UnityEngine.Debug.Log($"occam chunk {i}: data float length = {arr.Length}, bytes = {arr.Length * sizeof(float)}");
+                // m_GpuOccamFeatures[i].SetData(arr);
+                // cmb.SetComputeBufferParam(
+                //     m_CSSplatUtilities,
+                //     (int)KernelIndices.PrecomputeCLIPDotProducts,
+                //     "_SplatOccamFeaturesChunk",
+                //     m_GpuOccamFeatures[i]
+                // );
+
+                // Set chunk parameters
+                cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatOccamChunkSize", chunkSize);
+                cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatOccamChunkOffset", (int)offset);
+
+                // Dispatch for this chunk
+                DispatchUtilsAndExecute(cmb, KernelIndices.PrecomputeCLIPDotProducts, m_SplatCount);
+
+                UnityEngine.Debug.Log($"Dispatched CLIP dot products for chunk {i + 1}/{chunksPerSplat}, offset={offset}, size={chunkSize}");
+                offset += (uint)chunkSize;
+            }
+
+            UnityEngine.Debug.Log("Done dispatching all CLIP query precomputes");
         }
 
         public void EditCopySplats(

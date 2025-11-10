@@ -765,10 +765,10 @@ void CSCopySplats (uint3 id : SV_DispatchThreadID)
 
 
 StructuredBuffer<float> _CLIPQueryVector; // N-dimensional vector stored as contiguous floats (512)
-StructuredBuffer<float> _SplatLangsplatWeights; // Splat count x 64 floats
+StructuredBuffer<half> _SplatOccamFeaturesChunk; // Chunk of K floats per splat (e.g., 128)
+uint _SplatOccamChunkSize;
+uint _SplatOccamChunkOffset;
 uint _CLIPQueryVectorDim; // number of components in _CLIPVector (512)
-StructuredBuffer<float> _LangSplatCodebook; // codebook entries stored as contiguous floats (L x 512)
-uint _LangSplatCodebookEntryCount; // number of codebook entries (L)
 
 [numthreads(GROUP_SIZE,1,1)]
 void CSPrecomputeCLIPDotProducts (uint3 id : SV_DispatchThreadID)
@@ -777,21 +777,16 @@ void CSPrecomputeCLIPDotProducts (uint3 id : SV_DispatchThreadID)
     if (idx >= _SplatCount)
         return;
 
-    // Compute the dot product between CLIP query vector and each Langsplat codebook vector.
-    // Then, multiply by the splat's Langsplat weights and sum up to get the final dot product for the splat.
-    float dotProduct = 0.0;
-    for (uint entryIdx = 0; entryIdx < _LangSplatCodebookEntryCount; ++entryIdx)
-    {
-        float entryDot = 0.0;
-        for (uint dim = 0; dim < _CLIPQueryVectorDim; ++dim)
-        {
-            float clipVal = _CLIPQueryVector[dim];
-            float codebookVal = _LangSplatCodebook[entryIdx * _CLIPQueryVectorDim + dim];
-            entryDot += clipVal * codebookVal;
-        }
-        float weight = _SplatLangsplatWeights[idx * _LangSplatCodebookEntryCount + entryIdx];
-        dotProduct += entryDot * weight;
-    }
+    if (_SplatOccamChunkOffset == 0) // first chunk, clear dot product
+        _SplatCLIPDotProducts[idx] = 0.0;
 
+    // Compute the dot product between CLIP query vector and each splat's Occam features.
+    float dotProduct = _SplatCLIPDotProducts[idx];
+    for (uint dim = _SplatOccamChunkOffset; dim < _SplatOccamChunkOffset + _SplatOccamChunkSize; ++dim)
+    {
+        float clipVal = _CLIPQueryVector[dim];
+        // dotProduct += clipVal * _SplatOccamFeaturesChunk[idx * _SplatOccamChunkSize + (dim - _SplatOccamChunkOffset)];
+        dotProduct += clipVal * clipVal;
+    }
     _SplatCLIPDotProducts[idx] = dotProduct;
 }

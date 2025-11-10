@@ -118,15 +118,19 @@ namespace GaussianSplatting.Runtime
             m_DataHash = hash;
         }
 
-        public void SetAssetFiles(TextAsset dataChunk, TextAsset dataPos, TextAsset dataOther, TextAsset dataColor, TextAsset dataSh, TextAsset dataCodebook, TextAsset langsplatWeights)
+        public void SetAssetFiles(TextAsset dataChunk, TextAsset dataPos, TextAsset dataOther, TextAsset dataColor, TextAsset dataSh, TextAsset[] occamFeatures)
         {
             m_ChunkData = dataChunk;
             m_PosData = dataPos;
             m_OtherData = dataOther;
             m_ColorData = dataColor;
             m_SHData = dataSh;
-            m_inputCodebookData = dataCodebook;
-            m_LangsplatWeightsData = langsplatWeights;
+            occamFeaturesEnabled = false;
+            if (occamFeatures != null)
+            {
+                occamFeaturesEnabled = true;
+                m_OccamFeatures = occamFeatures;
+            }
         }
 
         public static int GetOtherSizeNoSHIndex(VectorFormat scaleFormat)
@@ -217,6 +221,9 @@ namespace GaussianSplatting.Runtime
         [SerializeField] TextAsset m_inputCodebookData;
         // Input weights for Langsplat (64 weights per splat)
         [SerializeField] TextAsset m_LangsplatWeightsData;
+        [SerializeField] public bool occamFeaturesEnabled = false;
+        // OccamFeatures 512 vectors.
+        [SerializeField] TextAsset[] m_OccamFeatures;
         // Chunk data is optional (if data formats are fully lossless then there's no chunking)
         [SerializeField] TextAsset m_ChunkData;
 
@@ -234,6 +241,7 @@ namespace GaussianSplatting.Runtime
         public TextAsset chunkData => m_ChunkData;
         public TextAsset inputCodebookData => m_inputCodebookData;
         public TextAsset langsplatWeightsData => m_LangsplatWeightsData;
+        public TextAsset[] occamFeatures => m_OccamFeatures;
         public CameraInfo[] cameras => m_Cameras;
 
         public struct ChunkInfo
