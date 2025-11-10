@@ -131,6 +131,7 @@ namespace GaussianSplatting.Runtime
                 occamFeaturesEnabled = true;
                 m_OccamFeatures = occamFeatures;
             }
+            UnityEngine.Debug.Log($"Set occam features: enabled = {occamFeaturesEnabled}, count = {(m_OccamFeatures != null ? m_OccamFeatures.Length : 0)}");
         }
 
         public static int GetOtherSizeNoSHIndex(VectorFormat scaleFormat)
@@ -242,6 +243,17 @@ namespace GaussianSplatting.Runtime
         public TextAsset inputCodebookData => m_inputCodebookData;
         public TextAsset langsplatWeightsData => m_LangsplatWeightsData;
         public TextAsset[] occamFeatures => m_OccamFeatures;
+        public string occamFeaturesPath
+        {
+            get
+            {
+                if (m_OccamFeatures != null && m_OccamFeatures.Length > 0 && m_OccamFeatures[0] != null)
+                {
+                    return System.IO.Path.GetDirectoryName(UnityEditor.AssetDatabase.GetAssetPath(m_OccamFeatures[0]));
+                }
+                return m_OccamFeatures.Length.ToString();
+            }
+        }
         public CameraInfo[] cameras => m_Cameras;
 
         public struct ChunkInfo

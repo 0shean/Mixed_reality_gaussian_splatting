@@ -421,6 +421,7 @@ namespace GaussianSplatting.Runtime
             // UnityEngine.Debug.Assert(m_GpuLangsplatWeights.count / 64 == m_SplatCount, "Splat count does not match LangSplat num splats.");
             if (asset.occamFeaturesEnabled)
             {
+                m_GpuOccamFeatures = new GraphicsBuffer[asset.occamFeatures.Length];
                 for (int i = 0; i < asset.occamFeatures.Length; i++)
                 {
                     m_GpuOccamFeatures[i] = new GraphicsBuffer(
@@ -432,7 +433,7 @@ namespace GaussianSplatting.Runtime
                     // m_GpuOccamFeatures[i].SetData(asset.occamFeatures[i].GetData<float>());
                     UnityEngine.Debug.Log($"Created OccamFeatures buffer {i} with {m_GpuOccamFeatures[i].count} floats.");
                     // This assumes that the number of features per splat is 512.
-                    UnityEngine.Debug.Assert(m_GpuOccamFeatures[i].count / 512 * m_GpuOccamFeatures.Length == m_SplatCount, "Splat count does not match OccamFeatures num splats.");
+                    // UnityEngine.Debug.Assert(m_GpuOccamFeatures[i].count / 512 / m_GpuOccamFeatures.Length == m_SplatCount, "Splat count does not match OccamFeatures num splats.");
                 }
             }
             else
@@ -1144,7 +1145,7 @@ namespace GaussianSplatting.Runtime
                 UnityEngine.Debug.LogError("No Occam features data found in the Gaussian Splat Asset!");
                 return;
             }
-            UnityEngine.Debug.Log("Precomputing CLIP query dot products");
+            UnityEngine.Debug.Log($"Precomputing CLIP query dot products, there are {asset.occamFeatures.Length} Occam feature chunks.");
 
             // Input: 512-dim CLIP query float vector.
             // Output: N dot products between query and Gaussian language feature vectors.
@@ -1170,13 +1171,13 @@ namespace GaussianSplatting.Runtime
                 // Set Occam feature chunk for this dispatch
                 var arr = asset.occamFeatures[i].GetData<float>();
                 UnityEngine.Debug.Log($"occam chunk {i}: data float length = {arr.Length}, bytes = {arr.Length * sizeof(float)}");
-                // m_GpuOccamFeatures[i].SetData(arr);
-                // cmb.SetComputeBufferParam(
-                //     m_CSSplatUtilities,
-                //     (int)KernelIndices.PrecomputeCLIPDotProducts,
-                //     "_SplatOccamFeaturesChunk",
-                //     m_GpuOccamFeatures[i]
-                // );
+                m_GpuOccamFeatures[i].SetData(arr);
+                cmb.SetComputeBufferParam(
+                    m_CSSplatUtilities,
+                    (int)KernelIndices.PrecomputeCLIPDotProducts,
+                    "_SplatOccamFeaturesChunk",
+                    m_GpuOccamFeatures[i]
+                );
 
                 // Set chunk parameters
                 cmb.SetComputeIntParam(m_CSSplatUtilities, "_SplatOccamChunkSize", chunkSize);

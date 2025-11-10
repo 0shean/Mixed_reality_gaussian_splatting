@@ -341,12 +341,14 @@ namespace GaussianSplatting.Editor
             // files are created, import them so we can get to the imported objects, ugh
             EditorUtility.DisplayProgressBar(kProgressTitle, "Initial texture import", 0.85f);
             AssetDatabase.Refresh(ImportAssetOptions.ForceUncompressedImport);
+            var occamAssetsList = new List<TextAsset>();
 
-            TextAsset[] occamAssets = new TextAsset[] { };
             for (int i = 0; i < occamPaths.Length; i++)
             {
-                occamAssets.Append(AssetDatabase.LoadAssetAtPath<TextAsset>(occamPaths[i]));
+                occamAssetsList.Add(AssetDatabase.LoadAssetAtPath<TextAsset>(occamPaths[i]));
             }
+
+            TextAsset[] occamAssets = occamAssetsList.ToArray();
 
             EditorUtility.DisplayProgressBar(kProgressTitle, "Setup data onto asset", 0.95f);
             asset.SetAssetFiles(
@@ -875,6 +877,9 @@ namespace GaussianSplatting.Editor
 
         unsafe void CreateSplitBuffers(string inputFilePath, string[] outputPaths, ref Hash128 dataHash)
         {
+            if (!File.Exists(inputFilePath))
+                return;
+
             const int floatSize = sizeof(float);
             // const int float32Size = sizeof(float);
             // const int float16Size = sizeof(System.Half);
@@ -921,7 +926,7 @@ namespace GaussianSplatting.Editor
             foreach (var w in writers)
                 w.Dispose();
 
-            UnityEngine.Debug.Log("Finished splitting Occam feature file into 8 buffers.");
+            UnityEngine.Debug.Log($"Finished splitting Occam feature file into {chunksPerSplat} buffers.");
         }
 
         unsafe void CreateLangsplatWeightsData(NativeArray<InputSplatData> inputSplats, string filePath, ref Hash128 dataHash)
