@@ -1130,12 +1130,72 @@ namespace GaussianSplatting.Runtime
             if (embedding != null)
             {
                 UnityEngine.Debug.Log($"Received CLIP embedding for query '{clipText}' (length: {embedding.Length})");
-                PrecomputeCLIPQueryDotProducts(embedding);
+                // PrecomputeCLIPQueryDotProducts(embedding);
+                PrecomputeCLIPQueryDotProductsCPU(embedding);
             }
             else
             {
                 UnityEngine.Debug.LogError($"Failed to get CLIP embedding for query '{clipText}'");
             }
+        }
+
+        public void PrecomputeCLIPQueryDotProductsCPU(float[] clipQueryVector)
+        {
+            if (!asset.occamFeaturesEnabled)
+            {
+                UnityEngine.Debug.LogError("No Occam features data found in the Gaussian Splat Asset!");
+                return;
+            }
+
+            int chunksPerSplat = asset.occamFeatures.Length; // typically 16
+            const int floatsPerSplat = 512;
+            int chunkSize = floatsPerSplat / chunksPerSplat;
+
+            UnityEngine.Debug.Log($"[CPU] Precomputing CLIP dot products across {chunksPerSplat} chunks × {chunkSize} floats per chunk...");
+
+            // Load all Occam feature chunks into memory (each chunk = float[] of size SplatCount * chunkSize)
+            var occamData = new float[chunksPerSplat][];
+            for (int i = 0; i < chunksPerSplat; i++)
+            {
+                occamData[i] = asset.occamFeatures[i].GetData<float>().ToArray();
+                UnityEngine.Debug.Log($"Loaded Occam chunk {i}: {occamData[i].Length} floats");
+            }
+
+            int splatCount = m_SplatCount;
+            float[] splatDotProducts = new float[splatCount];
+
+            // Parallelize across splats
+            Parallel.For(0, splatCount, idx =>
+            {
+                // Get thread ID for debugging
+                int threadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
+
+                // Print progress occasionally
+                if (idx % 10000 == 0)
+                    UnityEngine.Debug.Log($"[Thread {threadId}] Processing splat {idx}/{splatCount}");
+
+                float sum = 0f;
+                for (int chunk = 0; chunk < chunksPerSplat; chunk++)
+                {
+                    var chunkData = occamData[chunk];
+                    int chunkOffset = idx * chunkSize;
+                    for (int dim = 0; dim < chunkSize; dim++)
+                    {
+                        // Regular dot product:
+                        sum += clipQueryVector[chunk * chunkSize + dim] * chunkData[chunkOffset + dim];
+
+                        // Simplified debug version (like your test shader logic):
+                        // if (chunkData[chunkOffset + dim] > 0)
+                            // sum += 1f / floatsPerSplat;
+                    }
+                }
+                splatDotProducts[idx] = sum;
+            });
+
+            UnityEngine.Debug.Log($"[CPU] Done computing CLIP dot products for {splatCount} splats.");
+
+            // Optionally upload back to GPU, or store for CPU-side filtering:
+            m_GpuCLIPDotProducts.SetData(splatDotProducts);
         }
 
         public void PrecomputeCLIPQueryDotProducts(float[] clipQueryVector)

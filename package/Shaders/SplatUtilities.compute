@@ -784,8 +784,12 @@ void CSPrecomputeCLIPDotProducts (uint3 id : SV_DispatchThreadID)
     float dotProduct = _SplatCLIPDotProducts[idx];
     for (uint dim = _SplatOccamChunkOffset; dim < _SplatOccamChunkOffset + _SplatOccamChunkSize; ++dim)
     {
-        float clipVal = _CLIPQueryVector[dim];
-        dotProduct += clipVal * _SplatOccamFeaturesChunk[idx * _SplatOccamChunkSize + (dim - _SplatOccamChunkOffset)];
+        // float clipVal = _CLIPQueryVector[dim];
+        // dotProduct += clipVal * _SplatOccamFeaturesChunk[idx * _SplatOccamChunkSize + (dim - _SplatOccamChunkOffset)];
+        if (_SplatOccamFeaturesChunk[idx * _SplatOccamChunkSize + (dim - _SplatOccamChunkOffset)] > 0)
+        {
+            dotProduct += 1.0 / 512.0;
+        }
     }
     _SplatCLIPDotProducts[idx] = dotProduct;
 }
