@@ -151,6 +151,8 @@ namespace GaussianSplatting.Runtime
                 mpb.SetInteger(GaussianSplatRenderer.Props.DisplayIndex, gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugPointIndices ? 1 : 0);
                 mpb.SetInteger(Shader.PropertyToID("_DisplayCLIPDotProducts"), gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugPointCLIPDotProducts ? 1 : 0);
                 mpb.SetBuffer(Shader.PropertyToID("_SplatCLIPDotProducts"), gs.m_GpuCLIPDotProducts);
+                mpb.SetBuffer(Shader.PropertyToID("_SplatRelevancyScores"), gs.m_GpuCLIPRelevancyScores);
+                mpb.SetFloat(Shader.PropertyToID("_SplatMaxRelevancyScore"), gs.m_MaxRelevancyScore);
                 mpb.SetInteger(GaussianSplatRenderer.Props.DisplayChunks, gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds ? 1 : 0);
 
                 cmb.BeginSample(s_ProfCalcView);
@@ -272,7 +274,18 @@ namespace GaussianSplatting.Runtime
         GraphicsBuffer m_GpuInputCodebook;
         GraphicsBuffer m_GpuLangsplatWeights;
         GraphicsBuffer[] m_GpuOccamFeatures;
+        // Dot products with small set of generic queries like "object", "texture", etc.
+        GraphicsBuffer[] m_GpuOccamNegativeQueryDotProducts;
+        string[] m_OccamNegativeQueries = new string[]
+        {
+            "object",
+            "texture",
+            // "thing",
+            // "stuff"
+        };
         internal GraphicsBuffer m_GpuCLIPDotProducts;
+        public float m_MaxRelevancyScore = 1f;
+        internal GraphicsBuffer m_GpuCLIPRelevancyScores;
 
         // these buffers are only for splat editing, and are lazily created
         GraphicsBuffer m_GpuEditCutouts;
@@ -383,7 +396,7 @@ namespace GaussianSplatting.Runtime
 
         const int kGpuViewDataSize = 48;
 
-        void CreateResourcesForAsset()
+        async Task CreateResourcesForAsset()
         {
             if (!HasValidAsset)
                 return;
@@ -396,29 +409,6 @@ namespace GaussianSplatting.Runtime
             m_GpuSHData = new GraphicsBuffer(GraphicsBuffer.Target.Raw, (int) (asset.shData.dataSize / 4), 4) { name = "GaussianSHData" };
             m_GpuSHData.SetData(asset.shData.GetData<uint>());
 
-            // We will create the buffer of LangSplat coefficients here.
-            // We will also create the sparse codebook for the Language feature basis.
-            // Size of the input codebook is L (codebook size) * 512 floats.
-            // int numFloats = (int) asset.inputCodebookData.dataSize / sizeof(float);
-            // m_GpuInputCodebook = new GraphicsBuffer(
-            //     GraphicsBuffer.Target.Structured,
-            //     numFloats,
-            //     sizeof(float)
-            // ) { name = "GaussianLangsplatCodebook" };
-            // m_GpuInputCodebook.SetData(asset.inputCodebookData.GetData<float>());
-            // UnityEngine.Debug.Assert(numFloats % 512 == 0, "Input codebook data size is not a multiple of 512 floats.");
-            // UnityEngine.Debug.Log($"Created LangSplat codebook buffer with {numFloats / 512} entries.");
-
-            // asset.langsplatWeightsData
-            // m_GpuLangsplatWeights = new GraphicsBuffer(
-            //     GraphicsBuffer.Target.Structured,
-            //     (int)(asset.langsplatWeightsData.dataSize / sizeof(float)),
-            //     sizeof(float)
-            // ) { name = "GaussianLangsplatWeights" };
-            // m_GpuLangsplatWeights.SetData(asset.langsplatWeightsData.GetData<float>());
-            // UnityEngine.Debug.Log($"Created LangSplat weights buffer with {m_GpuLangsplatWeights.count} floats.");
-            // // This assumes that the number of coefficients per splat is 64.
-            // UnityEngine.Debug.Assert(m_GpuLangsplatWeights.count / 64 == m_SplatCount, "Splat count does not match LangSplat num splats.");
             if (asset.occamFeaturesEnabled)
             {
                 m_GpuOccamFeatures = new GraphicsBuffer[asset.occamFeatures.Length];
@@ -431,9 +421,19 @@ namespace GaussianSplatting.Runtime
                     )
                     { name = "GaussianOccamFeatures" + i };
                     // m_GpuOccamFeatures[i].SetData(asset.occamFeatures[i].GetData<float>());
-                    UnityEngine.Debug.Log($"Created OccamFeatures buffer {i} with {m_GpuOccamFeatures[i].count} floats.");
+                    // UnityEngine.Debug.Log($"Created OccamFeatures buffer {i} with {m_GpuOccamFeatures[i].count} floats.");
                     // This assumes that the number of features per splat is 512.
                     // UnityEngine.Debug.Assert(m_GpuOccamFeatures[i].count / 512 / m_GpuOccamFeatures.Length == m_SplatCount, "Splat count does not match OccamFeatures num splats.");
+                }
+                m_GpuOccamNegativeQueryDotProducts = new GraphicsBuffer[m_OccamNegativeQueries.Length];
+                for (int i = 0; i < m_OccamNegativeQueries.Length; i++)
+                {
+                    m_GpuOccamNegativeQueryDotProducts[i] = new GraphicsBuffer(
+                        GraphicsBuffer.Target.Structured,
+                        m_SplatCount,
+                        sizeof(float)
+                    )
+                    { name = "GaussianOccamNegativeQueryDotProducts_" + m_OccamNegativeQueries[i] };
                 }
             }
             else
@@ -477,8 +477,8 @@ namespace GaussianSplatting.Runtime
             });
             // Initialize the vector to store the dot products between the CLIP query vector
             // and the language features embedded for each Gaussian.
-            m_GpuCLIPDotProducts = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.splatCount, 4);
-
+            m_GpuCLIPDotProducts = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.splatCount, sizeof(float));
+            m_GpuCLIPRelevancyScores = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.splatCount, sizeof(float));
             InitSortBuffers(splatCount);
         }
 
@@ -610,11 +610,20 @@ namespace GaussianSplatting.Runtime
                     DisposeBuffer(ref m_GpuOccamFeatures[i]);
                 }
             }
+            if (m_GpuOccamNegativeQueryDotProducts != null)
+            {
+                for (int i = 0; i < m_GpuOccamNegativeQueryDotProducts.Length; i++)
+                {
+                    DisposeBuffer(ref m_GpuOccamNegativeQueryDotProducts[i]);
+                }
+            }
+
             DisposeBuffer(ref m_GpuView);
             DisposeBuffer(ref m_GpuIndexBuffer);
             DisposeBuffer(ref m_GpuSortDistances);
             DisposeBuffer(ref m_GpuSortKeys);
             DisposeBuffer(ref m_GpuCLIPDotProducts);
+            DisposeBuffer(ref m_GpuCLIPRelevancyScores);
 
             DisposeBuffer(ref m_GpuEditSelectedMouseDown);
             DisposeBuffer(ref m_GpuEditPosMouseDown);
@@ -1116,7 +1125,17 @@ namespace GaussianSplatting.Runtime
             dst.editModified = true;
         }
 
-        public async Task ProcessCLIPQuery(string clipText)
+        public async Task RecomputeNegativeQuerySimilarities()
+        {
+            // let's do the precomputation for the CLIP dot products now.
+            for (int i = 0; i < m_OccamNegativeQueries.Length; i++)
+            {
+                UnityEngine.Debug.Log($"Precomputing CLIP dot products for query '{m_OccamNegativeQueries[i]}'");
+                await ProcessCLIPQuery(m_OccamNegativeQueries[i], m_GpuOccamNegativeQueryDotProducts[i]);
+            }
+        }
+
+        public async Task ProcessCLIPQuery(string clipText, GraphicsBuffer target = null)
         {
             var clipClient = GetComponent<ClipClient>();
             if (clipClient == null)
@@ -1124,6 +1143,8 @@ namespace GaussianSplatting.Runtime
                 UnityEngine.Debug.LogError("ClipClient component not found on this GameObject!");
                 return;
             }
+            if (target == null)
+                target = m_GpuCLIPDotProducts;
 
             float[] embedding = await clipClient.RequestEmbeddingAsync(clipText);
 
@@ -1131,7 +1152,7 @@ namespace GaussianSplatting.Runtime
             {
                 UnityEngine.Debug.Log($"Received CLIP embedding for query '{clipText}' (length: {embedding.Length})");
                 // PrecomputeCLIPQueryDotProducts(embedding);
-                PrecomputeCLIPQueryDotProductsCPU(embedding);
+                PrecomputeCLIPQueryDotProductsCPU(embedding, target);
             }
             else
             {
@@ -1139,7 +1160,7 @@ namespace GaussianSplatting.Runtime
             }
         }
 
-        public void PrecomputeCLIPQueryDotProductsCPU(float[] clipQueryVector)
+        public void PrecomputeCLIPQueryDotProductsCPU(float[] clipQueryVector, GraphicsBuffer outputBuffer)
         {
             if (!asset.occamFeaturesEnabled)
             {
@@ -1171,13 +1192,6 @@ namespace GaussianSplatting.Runtime
             // Parallelize across splats
             Parallel.For(0, splatCount, idx =>
             {
-                // Get thread ID for debugging
-                int threadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
-
-                // Print progress occasionally
-                // if (idx % 10000 == 0)
-                //     UnityEngine.Debug.Log($"[Thread {threadId}] Processing splat {idx}/{splatCount}");
-
                 float sum = 0f;
                 for (int chunk = 0; chunk < chunksPerSplat; chunk++)
                 {
@@ -1193,11 +1207,13 @@ namespace GaussianSplatting.Runtime
                         // sum += 1f / floatsPerSplat;
                     }
                 }
+                // Get thread ID for debugging
+                int threadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
                 // Print progress occasionally
-                if (idx % 10000 == 0)
-                {
-                    UnityEngine.Debug.Log($"[Thread {threadId}] Processing splat {idx}/{splatCount}");
-                }
+                // if (idx % 100000 == 0)
+                // {
+                //     UnityEngine.Debug.Log($"[Thread {threadId}] Processing splat {idx}/{splatCount}");
+                // }
                 lock (minMaxLock)
                 {
                     if (sum < globalMin) globalMin = sum;
@@ -1212,8 +1228,70 @@ namespace GaussianSplatting.Runtime
             UnityEngine.Debug.Log($"Global max dot product: {globalMax}");
 
             // Optionally upload back to GPU, or store for CPU-side filtering:
-            m_GpuCLIPDotProducts.SetData(splatDotProducts);
+            outputBuffer.SetData(splatDotProducts);
         }
+
+        public void ComputeRelevancyScores(GraphicsBuffer dstScores)
+        {
+            // Input: Positive query will be the m_GpuCLIPDotProducts
+            //        Negative queries will be in m_GpuOccamNegativeQueryDotProducts
+            // Output: dstScores buffer with relevancy scores per splat.
+            if (!asset.occamFeaturesEnabled)
+            {
+                UnityEngine.Debug.LogError("No Occam features data found in the Gaussian Splat Asset!");
+                return;
+            }
+            float globalMin = float.MaxValue;
+            float globalMax = float.MinValue;
+            object minMaxLock = new object(); // lock object
+
+            float[] gpuCLIPDotProducts = new float[m_SplatCount];
+            m_GpuCLIPDotProducts.GetData(gpuCLIPDotProducts);
+
+            float[] gpuNegativeDotProducts = new float[m_SplatCount * m_OccamNegativeQueries.Length];
+            for (int i = 0; i < m_OccamNegativeQueries.Length; i++)
+            {
+                m_GpuOccamNegativeQueryDotProducts[i].GetData(gpuNegativeDotProducts, i * m_SplatCount, 0, m_SplatCount);
+            }
+
+            float[] splatRelevancyScores = new float[splatCount];
+
+            // Parallelize across splats
+            Parallel.For(0, splatCount, idx =>
+            {
+                float score = float.MaxValue;
+                // Get thread ID for debugging
+                int threadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
+
+                // Do pairwise softmax between positive and each negative
+                float posDot = gpuCLIPDotProducts[idx];
+                // Get the minimum softmax score and record that.
+                for (int n = 0; n < m_OccamNegativeQueries.Length; n++)
+                {
+                    float negDot = gpuNegativeDotProducts[n * m_SplatCount + idx];
+                    float expPos = (float)Math.Exp(posDot);
+                    float expNeg = (float)Math.Exp(negDot);
+                    float softmaxScore = expPos / (expPos + expNeg + 1e-6f); // avoid div by zero.
+                    if (softmaxScore < score)
+                        score = softmaxScore;
+                }
+                splatRelevancyScores[idx] = score;
+
+                lock (minMaxLock)
+                {
+                    if (score < globalMin) globalMin = score;
+                    if (score > globalMax) globalMax = score;
+                }
+            });
+
+            UnityEngine.Debug.Log($"[CPU] Done computing relevancy scores for {splatCount} splats.");
+            UnityEngine.Debug.Log($"Global min relevancy score: {globalMin}");
+            UnityEngine.Debug.Log($"Global max relevancy score: {globalMax}");
+
+            m_MaxRelevancyScore = globalMax;
+            m_GpuCLIPRelevancyScores.SetData(splatRelevancyScores);
+        }
+
 
         public void PrecomputeCLIPQueryDotProducts(float[] clipQueryVector)
         {

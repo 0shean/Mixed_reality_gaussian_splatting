@@ -28,6 +28,8 @@ float _SplatSize;
 bool _DisplayIndex;
 bool _DisplayCLIPDotProducts;
 StructuredBuffer<float> _SplatCLIPDotProducts;
+StructuredBuffer<float> _SplatRelevancyScores;
+int _SplatMaxRelevancyScore;
 int _SplatCount;
 
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
@@ -56,18 +58,21 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
     }
     if (_DisplayCLIPDotProducts)
     {
-        float clipDot = _SplatCLIPDotProducts[splatIndex];
-        if (clipDot < -1 || clipDot > 1)
+        float relevancyScore = _SplatRelevancyScores[splatIndex];
+        if (relevancyScore < 0.5)
         {
-            o.color = half3(0, 0, 1); // out of range
+            // Do not show low relevancy score splats.
+            o.color = half3(0.1, 0.1, 0.1);
         }
         else
         {
-            // o.color = saturate(half3((clipDot + 1) * 0.5));
-            // o.color = half3(1, 1, 1);
-            float t = (clipDot + 1) * 0.5;
-            o.color = half3(lerp(1, 0, t), lerp(0, 1, t), 0); // gradient from red to green
-            // green means higher CLIP similarity, red means lower.
+            // Normalize between 0.5 and the max relevancy score.
+            float normalizedScore = saturate((relevancyScore - 0.5) / (_SplatMaxRelevancyScore - 0.5));
+
+            // Linearly interpolate between red (low) and green (high).
+            float3 lowColor = float3(1, 0, 0);   // red
+            float3 highColor = float3(0, 1, 0);  // green
+            o.color.rgb = lerp(lowColor, highColor, normalizedScore);
         }
     }
 
