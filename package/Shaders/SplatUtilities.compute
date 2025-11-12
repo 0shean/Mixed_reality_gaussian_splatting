@@ -16,6 +16,7 @@
 #pragma kernel CSScaleSelection
 #pragma kernel CSExportData
 #pragma kernel CSCopySplats
+#pragma kernel CSPrecomputeCLIPDotProducts
 
 // DeviceRadixSort
 #pragma multi_compile __ KEY_UINT KEY_INT KEY_FLOAT
@@ -186,6 +187,8 @@ bool IsSplatCut(float3 pos)
     return finalCut;
 }
 
+RWStructuredBuffer<float> _SplatCLIPDotProducts;
+
 [numthreads(GROUP_SIZE,1,1)]
 void CSCalcViewData (uint3 id : SV_DispatchThreadID)
 {
@@ -195,7 +198,7 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
 
     SplatData splat = LoadSplatData(idx);
     SplatViewData view = (SplatViewData)0;
-    
+
     float3 centerWorldPos = mul(_MatrixObjectToWorld, float4(splat.pos,1)).xyz;
     float4 centerClipPos = mul(UNITY_MATRIX_VP, float4(centerWorldPos, 1));
     half opacityScale = _SplatOpacityScale;
@@ -234,7 +237,7 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         cov3d0 *= splatScale2;
         cov3d1 *= splatScale2;
         float3 cov2d = CalcCovariance2D(splat.pos, cov3d0, cov3d1, _MatrixMV, UNITY_MATRIX_P, _VecScreenParams);
-        
+
         DecomposeCovariance(cov2d, view.axis1, view.axis2);
 
         float3 worldViewDir = _VecWorldSpaceCameraPos.xyz - centerWorldPos;
@@ -247,7 +250,10 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         view.color.x = (f32tof16(col.r) << 16) | f32tof16(col.g);
         view.color.y = (f32tof16(col.b) << 16) | f32tof16(col.a);
     }
-    
+
+    // Store the precomputed CLIP dot product to be rendered later.
+    view.clipDotProduct = _SplatCLIPDotProducts[idx];
+
     _SplatViewData[idx] = view;
 }
 
@@ -646,29 +652,29 @@ void CSExportData (uint3 id : SV_DispatchThreadID)
     dst.pos = src.pos;
     dst.nor = 0;
     dst.dc0 = ColorToSH0(src.sh.col);
-    
+
     dst.shR14 = float4(src.sh.sh1.r, src.sh.sh2.r, src.sh.sh3.r, src.sh.sh4.r);
     dst.shR58 = float4(src.sh.sh5.r, src.sh.sh6.r, src.sh.sh7.r, src.sh.sh8.r);
     dst.shR9C = float4(src.sh.sh9.r, src.sh.sh10.r, src.sh.sh11.r, src.sh.sh12.r);
     dst.shRDF = float3(src.sh.sh13.r, src.sh.sh14.r, src.sh.sh15.r);
-    
+
     dst.shG14 = float4(src.sh.sh1.g, src.sh.sh2.g, src.sh.sh3.g, src.sh.sh4.g);
     dst.shG58 = float4(src.sh.sh5.g, src.sh.sh6.g, src.sh.sh7.g, src.sh.sh8.g);
     dst.shG9C = float4(src.sh.sh9.g, src.sh.sh10.g, src.sh.sh11.g, src.sh.sh12.g);
     dst.shGDF = float3(src.sh.sh13.g, src.sh.sh14.g, src.sh.sh15.g);
-    
+
     dst.shB14 = float4(src.sh.sh1.b, src.sh.sh2.b, src.sh.sh3.b, src.sh.sh4.b);
     dst.shB58 = float4(src.sh.sh5.b, src.sh.sh6.b, src.sh.sh7.b, src.sh.sh8.b);
     dst.shB9C = float4(src.sh.sh9.b, src.sh.sh10.b, src.sh.sh11.b, src.sh.sh12.b);
     dst.shBDF = float3(src.sh.sh13.b, src.sh.sh14.b, src.sh.sh15.b);
-    
+
     dst.opacity = InvSigmoid(src.opacity);
     dst.scale = log(src.scale);
     dst.rot = src.rot.wxyz;
 
     if (isCut)
         dst.nor = 1; // mark as skipped for export
-    
+
     _ExportBuffer[idx] = dst;
 }
 
@@ -755,4 +761,35 @@ void CSCopySplats (uint3 id : SV_DispatchThreadID)
         uint dstBitIdx = dstIdx & 31;
         _CopyDstEditDeleted.InterlockedOr(dstWordIdx * 4, 1u << dstBitIdx);
     }
+}
+
+
+StructuredBuffer<float> _CLIPQueryVector; // N-dimensional vector stored as contiguous floats (512)
+StructuredBuffer<half> _SplatOccamFeaturesChunk; // Chunk of K floats per splat (e.g., 128)
+uint _SplatOccamChunkSize;
+uint _SplatOccamChunkOffset;
+uint _CLIPQueryVectorDim; // number of components in _CLIPVector (512)
+
+[numthreads(GROUP_SIZE,1,1)]
+void CSPrecomputeCLIPDotProducts (uint3 id : SV_DispatchThreadID)
+{
+    uint idx = id.x;
+    if (idx >= _SplatCount)
+        return;
+
+    if (_SplatOccamChunkOffset == 0) // first chunk, clear dot product
+        _SplatCLIPDotProducts[idx] = 0.0;
+
+    // Compute the dot product between CLIP query vector and each splat's Occam features.
+    float dotProduct = _SplatCLIPDotProducts[idx];
+    for (uint dim = _SplatOccamChunkOffset; dim < _SplatOccamChunkOffset + _SplatOccamChunkSize; ++dim)
+    {
+        // float clipVal = _CLIPQueryVector[dim];
+        // dotProduct += clipVal * _SplatOccamFeaturesChunk[idx * _SplatOccamChunkSize + (dim - _SplatOccamChunkOffset)];
+        if (_SplatOccamFeaturesChunk[idx * _SplatOccamChunkSize + (dim - _SplatOccamChunkOffset)] > 0)
+        {
+            dotProduct += 1.0 / 512.0;
+        }
+    }
+    _SplatCLIPDotProducts[idx] = dotProduct;
 }

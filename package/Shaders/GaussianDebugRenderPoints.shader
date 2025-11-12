@@ -9,7 +9,7 @@ Shader "Gaussian Splatting/Debug/Render Points"
         {
             ZWrite On
             Cull Off
-            
+
 CGPROGRAM
 #pragma vertex vert
 #pragma fragment frag
@@ -26,6 +26,11 @@ struct v2f
 
 float _SplatSize;
 bool _DisplayIndex;
+bool _DisplayCLIPDotProducts;
+StructuredBuffer<float> _SplatCLIPDotProducts;
+StructuredBuffer<float> _SplatRelevancyScores;
+float _SplatMinRelevancyScore;
+float _SplatMaxRelevancyScore;
 int _SplatCount;
 
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
@@ -51,6 +56,26 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
         o.color.r = frac((float)splatIndex / (float)_SplatCount * 100);
         o.color.g = frac((float)splatIndex / (float)_SplatCount * 10);
         o.color.b = (float)splatIndex / (float)_SplatCount;
+    }
+    if (_DisplayCLIPDotProducts)
+    {
+        float relevancyScore = _SplatRelevancyScores[splatIndex];
+        if (relevancyScore < 0.5)
+        {
+            // Do not show low relevancy score splats.
+            o.color = half3(0.1, 0.1, 0.1);
+        }
+        else
+        {
+            // Normalize between 0.5 and the max relevancy score.
+            float relevancy = (relevancyScore - _SplatMinRelevancyScore) / (_SplatMaxRelevancyScore - _SplatMinRelevancyScore);
+            float score = saturate(2 * relevancy - 1);
+
+            // Linearly interpolate between red (low) and green (high).
+            float3 lowColor = float3(1, 0, 0);   // red
+            float3 highColor = float3(0, 1, 0);  // green
+            o.color.rgb = lerp(lowColor, highColor, score);
+        }
     }
 
     FlipProjectionIfBackbuffer(o.vertex);

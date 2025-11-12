@@ -118,13 +118,20 @@ namespace GaussianSplatting.Runtime
             m_DataHash = hash;
         }
 
-        public void SetAssetFiles(TextAsset dataChunk, TextAsset dataPos, TextAsset dataOther, TextAsset dataColor, TextAsset dataSh)
+        public void SetAssetFiles(TextAsset dataChunk, TextAsset dataPos, TextAsset dataOther, TextAsset dataColor, TextAsset dataSh, TextAsset[] occamFeatures)
         {
             m_ChunkData = dataChunk;
             m_PosData = dataPos;
             m_OtherData = dataOther;
             m_ColorData = dataColor;
             m_SHData = dataSh;
+            occamFeaturesEnabled = false;
+            if (occamFeatures != null)
+            {
+                occamFeaturesEnabled = true;
+                m_OccamFeatures = occamFeatures;
+            }
+            UnityEngine.Debug.Log($"Set occam features: enabled = {occamFeaturesEnabled}, count = {(m_OccamFeatures != null ? m_OccamFeatures.Length : 0)}");
         }
 
         public static int GetOtherSizeNoSHIndex(VectorFormat scaleFormat)
@@ -211,6 +218,13 @@ namespace GaussianSplatting.Runtime
         [SerializeField] TextAsset m_ColorData;
         [SerializeField] TextAsset m_OtherData;
         [SerializeField] TextAsset m_SHData;
+        // Input codebook data for LangSplat.
+        [SerializeField] TextAsset m_inputCodebookData;
+        // Input weights for Langsplat (64 weights per splat)
+        [SerializeField] TextAsset m_LangsplatWeightsData;
+        [SerializeField] public bool occamFeaturesEnabled = false;
+        // OccamFeatures 512 vectors.
+        [SerializeField] TextAsset[] m_OccamFeatures;
         // Chunk data is optional (if data formats are fully lossless then there's no chunking)
         [SerializeField] TextAsset m_ChunkData;
 
@@ -226,6 +240,20 @@ namespace GaussianSplatting.Runtime
         public TextAsset otherData => m_OtherData;
         public TextAsset shData => m_SHData;
         public TextAsset chunkData => m_ChunkData;
+        public TextAsset inputCodebookData => m_inputCodebookData;
+        public TextAsset langsplatWeightsData => m_LangsplatWeightsData;
+        public TextAsset[] occamFeatures => m_OccamFeatures;
+        public string occamFeaturesPath
+        {
+            get
+            {
+                if (m_OccamFeatures != null && m_OccamFeatures.Length > 0 && m_OccamFeatures[0] != null)
+                {
+                    return System.IO.Path.GetDirectoryName(UnityEditor.AssetDatabase.GetAssetPath(m_OccamFeatures[0]));
+                }
+                return m_OccamFeatures.Length.ToString();
+            }
+        }
         public CameraInfo[] cameras => m_Cameras;
 
         public struct ChunkInfo

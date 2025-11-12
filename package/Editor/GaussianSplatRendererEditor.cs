@@ -35,6 +35,7 @@ namespace GaussianSplatting.Editor
         SerializedProperty m_PropShaderDebugPoints;
         SerializedProperty m_PropShaderDebugBoxes;
         SerializedProperty m_PropCSSplatUtilities;
+        SerializedProperty m_PropOccamNegativeQueries;
 
         bool m_ResourcesExpanded = false;
         int m_CameraIndex = 0;
@@ -44,6 +45,8 @@ namespace GaussianSplatting.Editor
         static int s_EditStatsUpdateCounter = 0;
 
         static HashSet<GaussianSplatRendererEditor> s_AllEditors = new();
+
+        string editorCLIPQuery = "";
 
         public static void BumpGUICounter()
         {
@@ -75,6 +78,7 @@ namespace GaussianSplatting.Editor
             m_PropShaderDebugPoints = serializedObject.FindProperty("m_ShaderDebugPoints");
             m_PropShaderDebugBoxes = serializedObject.FindProperty("m_ShaderDebugBoxes");
             m_PropCSSplatUtilities = serializedObject.FindProperty("m_CSSplatUtilities");
+            m_PropOccamNegativeQueries = serializedObject.FindProperty("m_OccamNegativeQueries");
 
             s_AllEditors.Add(this);
         }
@@ -144,6 +148,24 @@ namespace GaussianSplatting.Editor
             {
                 MultiEditGUI();
             }
+
+            EditorGUILayout.Space();
+            editorCLIPQuery = EditorGUILayout.TextField("CLIP query", editorCLIPQuery);
+            if (GUILayout.Button("Process CLIP Query"))
+            {
+                gs.ProcessCLIPQuery(editorCLIPQuery);
+            }
+            if (GUILayout.Button("Recompute negative query similarities"))
+            {
+                gs.RecomputeNegativeQuerySimilarities();
+            }
+            if (GUILayout.Button("Full compute relevancy scores (might be slow)"))
+            {
+                // await gs.ProcessCLIPQuery(editorCLIPQuery);
+                // await gs.RecomputeNegativeQuerySimilarities();
+                gs.ComputeRelevancyScores(null);
+            }
+            // EditorGUILayout.PropertyField()
 
             serializedObject.ApplyModifiedProperties();
         }

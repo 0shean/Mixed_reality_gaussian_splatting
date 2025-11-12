@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using GaussianSplatting.Editor.Utils;
 using GaussianSplatting.Runtime;
 using Unity.Burst;
@@ -37,6 +38,8 @@ namespace GaussianSplatting.Editor
         readonly FilePickerControl m_FilePicker = new();
 
         [SerializeField] string m_InputFile;
+        [SerializeField] string m_InputCodebookFile;
+        [SerializeField] string m_InputOccamFeaturesFile;
         [SerializeField] bool m_ImportCameras = true;
 
         [SerializeField] string m_OutputFolder = "Assets/GaussianAssets";
@@ -84,6 +87,10 @@ namespace GaussianSplatting.Editor
             var rect = EditorGUILayout.GetControlRect(true);
             m_InputFile = m_FilePicker.PathFieldGUI(rect, new GUIContent("Input PLY/SPZ File"), m_InputFile, "ply,spz", "PointCloudFile");
             m_ImportCameras = EditorGUILayout.Toggle("Import Cameras", m_ImportCameras);
+
+            EditorGUILayout.Space();
+            rect = EditorGUILayout.GetControlRect(true);
+            m_InputOccamFeaturesFile = m_FilePicker.PathFieldGUI(rect, new GUIContent("Occam Features File"), m_InputOccamFeaturesFile, "bin", "Occam Features file");
 
             if (m_InputFile != m_PrevFilePath && !string.IsNullOrWhiteSpace(m_InputFile))
             {
@@ -252,6 +259,11 @@ namespace GaussianSplatting.Editor
                 m_ErrorMessage = $"Select input PLY/SPZ file";
                 return;
             }
+            // if (string.IsNullOrWhiteSpace(m_InputCodebookFile))
+            // {
+            //     m_ErrorMessage = $"Select input codebook file";
+            //     return;
+            // }
 
             if (string.IsNullOrWhiteSpace(m_OutputFolder) || !m_OutputFolder.StartsWith("Assets/"))
             {
@@ -303,6 +315,11 @@ namespace GaussianSplatting.Editor
             string pathOther = $"{m_OutputFolder}/{baseName}_oth.bytes";
             string pathCol = $"{m_OutputFolder}/{baseName}_col.bytes";
             string pathSh = $"{m_OutputFolder}/{baseName}_shs.bytes";
+            // string pathOccam = $"{m_OutputFolder}/{baseName}_occam.bytes";
+            string[] occamPaths = Enumerable
+                .Range(1, 16)
+                .Select(i => $"{m_OutputFolder}/{baseName}_occam{i}.bytes")
+                .ToArray();
 
             // if we are using full lossless (FP32) data, then do not use any chunking, and keep data as-is
             bool useChunks = isUsingChunks;
@@ -312,6 +329,10 @@ namespace GaussianSplatting.Editor
             CreateOtherData(inputSplats, pathOther, ref dataHash, splatSHIndices);
             CreateColorData(inputSplats, pathCol, ref dataHash);
             CreateSHData(inputSplats, pathSh, ref dataHash, clusteredSHs);
+            // CreateRawBinaryData(m_InputCodebookFile, pathCodebook, ref dataHash);
+            // CreateLangsplatWeightsData(inputSplats, pathLangsplatWeights, ref dataHash);
+            // CreateRawBinaryData(m_InputOccamFeaturesFile, pathOccam, ref dataHash);
+            CreateSplitBuffers(m_InputOccamFeaturesFile, occamPaths, ref dataHash);
             asset.SetDataHash(dataHash);
 
             splatSHIndices.Dispose();
@@ -320,6 +341,14 @@ namespace GaussianSplatting.Editor
             // files are created, import them so we can get to the imported objects, ugh
             EditorUtility.DisplayProgressBar(kProgressTitle, "Initial texture import", 0.85f);
             AssetDatabase.Refresh(ImportAssetOptions.ForceUncompressedImport);
+            var occamAssetsList = new List<TextAsset>();
+
+            for (int i = 0; i < occamPaths.Length; i++)
+            {
+                occamAssetsList.Add(AssetDatabase.LoadAssetAtPath<TextAsset>(occamPaths[i]));
+            }
+
+            TextAsset[] occamAssets = occamAssetsList.ToArray();
 
             EditorUtility.DisplayProgressBar(kProgressTitle, "Setup data onto asset", 0.95f);
             asset.SetAssetFiles(
@@ -327,7 +356,9 @@ namespace GaussianSplatting.Editor
                 AssetDatabase.LoadAssetAtPath<TextAsset>(pathPos),
                 AssetDatabase.LoadAssetAtPath<TextAsset>(pathOther),
                 AssetDatabase.LoadAssetAtPath<TextAsset>(pathCol),
-                AssetDatabase.LoadAssetAtPath<TextAsset>(pathSh));
+                AssetDatabase.LoadAssetAtPath<TextAsset>(pathSh),
+                m_InputOccamFeaturesFile.Length > 0 ? occamAssets : null
+            );
 
             var assetPath = $"{m_OutputFolder}/{baseName}.asset";
             var savedAsset = CreateOrReplaceAsset(asset, assetPath);
@@ -823,6 +854,99 @@ namespace GaussianSplatting.Editor
                 m_Output = data
             };
             job.Schedule(inputSplats.Length, 8192).Complete();
+
+            dataHash.Append(data);
+
+            using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write);
+            fs.Write(data);
+
+            data.Dispose();
+        }
+
+        void CreateRawBinaryData(string inputFilePath, string filePath, ref Hash128 dataHash)
+        {
+            if (!File.Exists(inputFilePath))
+                return;
+
+            byte[] fileData = File.ReadAllBytes(inputFilePath);
+            dataHash.Append(fileData);
+
+            using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write);
+            fs.Write(fileData);
+        }
+
+        unsafe void CreateSplitBuffers(string inputFilePath, string[] outputPaths, ref Hash128 dataHash)
+        {
+            if (!File.Exists(inputFilePath))
+                return;
+
+            const int floatSize = sizeof(float);
+            // const int float32Size = sizeof(float);
+            // const int float16Size = sizeof(System.Half);
+            const int floatsPerSplat = 512;
+            const int floatsPerChunk = 32;
+            const int chunksPerSplat = floatsPerSplat / floatsPerChunk; // = 8
+
+            if (outputPaths.Length != chunksPerSplat)
+                throw new ArgumentException($"Expected {chunksPerSplat} output paths, got {outputPaths.Length}");
+
+            using var fsInput = new FileStream(inputFilePath, FileMode.Open, FileAccess.Read);
+            using var reader = new BinaryReader(fsInput);
+
+            long totalSplatCount = fsInput.Length / (floatSize * floatsPerSplat);
+            UnityEngine.Debug.Log($"Splitting {totalSplatCount} splats into {chunksPerSplat} × {floatsPerChunk}-float chunks...");
+
+            // Update hash for reproducibility
+            dataHash.Append(fsInput.Length);
+            fsInput.Position = 0;
+
+            // Create BinaryWriters for each output buffer
+            var writers = new BinaryWriter[chunksPerSplat];
+            for (int i = 0; i < chunksPerSplat; i++)
+                writers[i] = new BinaryWriter(new FileStream(outputPaths[i], FileMode.Create, FileAccess.Write));
+
+            byte[] splatBytes = new byte[floatSize * floatsPerSplat];
+            byte[] buffer = new byte[floatSize * floatsPerChunk];
+
+            for (long i = 0; i < totalSplatCount; i++)
+            {
+                int read = reader.Read(splatBytes, 0, splatBytes.Length);
+                if (read != splatBytes.Length)
+                    throw new IOException($"Failed to read splat {i}, expected {splatBytes.Length} bytes, got {read}");
+
+                // Write each 64-float chunk to its corresponding buffer
+                for (int chunk = 0; chunk < chunksPerSplat; chunk++)
+                {
+                    Buffer.BlockCopy(splatBytes, chunk * floatsPerChunk * floatSize, buffer, 0, floatsPerChunk * floatSize);
+                    writers[chunk].Write(buffer);
+                }
+            }
+
+            // Dispose all writers
+            foreach (var w in writers)
+                w.Dispose();
+
+            UnityEngine.Debug.Log($"Finished splitting Occam feature file into {chunksPerSplat} buffers.");
+        }
+
+        unsafe void CreateLangsplatWeightsData(NativeArray<InputSplatData> inputSplats, string filePath, ref Hash128 dataHash)
+        {
+            int dataLen = inputSplats.Length * sizeof(float) * 64;
+            dataLen = NextMultipleOf(dataLen, 8); // serialized as ulong
+            NativeArray<byte> data = new(dataLen, Allocator.TempJob);
+
+            // Look how sexy this is... :)
+            for (int i = 0; i < inputSplats.Length; ++i)
+            {
+                InputSplatData s = inputSplats[i]; // ✅ local copy
+                byte* outputPtr = (byte*)data.GetUnsafePtr() + i * sizeof(float) * 64;
+
+                for (int j = 0; j < 64; ++j)
+                {
+                    *(float*)outputPtr = s.langFeatLogits[j];
+                    outputPtr += sizeof(float);
+                }
+            }
 
             dataHash.Append(data);
 
