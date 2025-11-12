@@ -152,6 +152,7 @@ namespace GaussianSplatting.Runtime
                 mpb.SetInteger(Shader.PropertyToID("_DisplayCLIPDotProducts"), gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugPointCLIPDotProducts ? 1 : 0);
                 mpb.SetBuffer(Shader.PropertyToID("_SplatCLIPDotProducts"), gs.m_GpuCLIPDotProducts);
                 mpb.SetBuffer(Shader.PropertyToID("_SplatRelevancyScores"), gs.m_GpuCLIPRelevancyScores);
+                mpb.SetFloat(Shader.PropertyToID("_SplatMinRelevancyScore"), gs.m_MinRelevancyScore);
                 mpb.SetFloat(Shader.PropertyToID("_SplatMaxRelevancyScore"), gs.m_MaxRelevancyScore);
                 mpb.SetInteger(GaussianSplatRenderer.Props.DisplayChunks, gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds ? 1 : 0);
 
@@ -284,7 +285,8 @@ namespace GaussianSplatting.Runtime
             // "stuff"
         };
         internal GraphicsBuffer m_GpuCLIPDotProducts;
-        public float m_MaxRelevancyScore = 1f;
+        public float m_MinRelevancyScore = -1.0f;
+        public float m_MaxRelevancyScore = 1.0f;
         internal GraphicsBuffer m_GpuCLIPRelevancyScores;
 
         // these buffers are only for splat editing, and are lazily created
@@ -1179,7 +1181,7 @@ namespace GaussianSplatting.Runtime
             for (int i = 0; i < chunksPerSplat; i++)
             {
                 occamData[i] = asset.occamFeatures[i].GetData<float>().ToArray();
-                UnityEngine.Debug.Log($"Loaded Occam chunk {i}: {occamData[i].Length} floats");
+                // UnityEngine.Debug.Log($"Loaded Occam chunk {i}: {occamData[i].Length} floats");
             }
 
             int splatCount = m_SplatCount;
@@ -1288,6 +1290,7 @@ namespace GaussianSplatting.Runtime
             UnityEngine.Debug.Log($"Global min relevancy score: {globalMin}");
             UnityEngine.Debug.Log($"Global max relevancy score: {globalMax}");
 
+            m_MinRelevancyScore = globalMin;
             m_MaxRelevancyScore = globalMax;
             m_GpuCLIPRelevancyScores.SetData(splatRelevancyScores);
         }

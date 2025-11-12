@@ -29,7 +29,8 @@ bool _DisplayIndex;
 bool _DisplayCLIPDotProducts;
 StructuredBuffer<float> _SplatCLIPDotProducts;
 StructuredBuffer<float> _SplatRelevancyScores;
-int _SplatMaxRelevancyScore;
+float _SplatMinRelevancyScore;
+float _SplatMaxRelevancyScore;
 int _SplatCount;
 
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
@@ -67,12 +68,13 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
         else
         {
             // Normalize between 0.5 and the max relevancy score.
-            float normalizedScore = saturate((relevancyScore - 0.5) / (_SplatMaxRelevancyScore - 0.5));
+            float relevancy = (relevancyScore - _SplatMinRelevancyScore) / (_SplatMaxRelevancyScore - _SplatMinRelevancyScore);
+            float score = saturate(2 * relevancy - 1);
 
             // Linearly interpolate between red (low) and green (high).
             float3 lowColor = float3(1, 0, 0);   // red
             float3 highColor = float3(0, 1, 0);  // green
-            o.color.rgb = lerp(lowColor, highColor, normalizedScore);
+            o.color.rgb = lerp(lowColor, highColor, score);
         }
     }
 
