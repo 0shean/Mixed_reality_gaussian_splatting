@@ -421,6 +421,12 @@ namespace GaussianSplatting.Runtime
                     name = "GaussianCanonicalSimilarities"
                 };
                 m_GpuCanonicalSimilarities.SetData(m_CanonicalSimilarities.bytes);
+                // float[] canonicalSimilaritiesArray = new float[count];
+                // for (int i = 0; i < count; i++)
+                // {
+                //     canonicalSimilaritiesArray[i] = (float)i / (float)count;
+                // }
+                // m_GpuCanonicalSimilarities.SetData(canonicalSimilaritiesArray);
                 // Assert that count is the same as num splats.
                 if (count != m_SplatCount)
                 {
@@ -552,6 +558,8 @@ namespace GaussianSplatting.Runtime
             mat.SetBuffer(Props.SplatPos, m_GpuPosData);
             mat.SetBuffer(Props.SplatOther, m_GpuOtherData);
             mat.SetBuffer(Props.SplatSH, m_GpuSHData);
+            mat.SetBuffer(Shader.PropertyToID("_SplatQuerySimilarities"), m_GpuQuerySimilarities);
+            mat.SetBuffer(Shader.PropertyToID("_SplatCanonicalSimilarities"), m_GpuCanonicalSimilarities);
             mat.SetTexture(Props.SplatColor, m_GpuColorData);
             mat.SetBuffer(Props.SplatSelectedBits, m_GpuEditSelected ?? m_GpuPosData);
             mat.SetBuffer(Props.SplatDeletedBits, m_GpuEditDeleted ?? m_GpuPosData);
