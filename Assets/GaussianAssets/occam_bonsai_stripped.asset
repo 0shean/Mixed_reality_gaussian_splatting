@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 906bed3b6e8f0f246b0dc1ec88f5484c, type: 3}
+  m_Name: occam_bonsai_stripped
+  m_EditorClassIdentifier: 
+  m_FormatVersion: 20231020
+  m_SplatCount: 1332017
+  m_BoundsMin: {x: -8.846197, y: -9.651136, z: -2.9683208}
+  m_BoundsMax: {x: 6.073775, y: 9.189331, z: 5.291421}
+  m_DataHash:
+    serializedVersion: 2
+    Hash: 355c7a4234657fda83172137b53862da
+  m_PosFormat: 2
+  m_ScaleFormat: 3
+  m_SHFormat: 8
+  m_ColorFormat: 3
+  m_PosData: {fileID: 4900000, guid: e1eac5f9d8857429387f8f67047bbfd7, type: 3}
+  m_ColorData: {fileID: 4900000, guid: e61cf1d8ed7f3463e8167278ee44557c, type: 3}
+  m_OtherData: {fileID: 4900000, guid: 3461b5b6db8ba4a0b994a4d1d8275563, type: 3}
+  m_SHData: {fileID: 4900000, guid: f8eb529603bb5489f95504debbbdfb64, type: 3}
+  m_ChunkData: {fileID: 4900000, guid: fae74c5029f5243f59572f8440d0db18, type: 3}
+  m_Cameras: []

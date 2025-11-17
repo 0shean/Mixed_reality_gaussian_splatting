@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 906bed3b6e8f0f246b0dc1ec88f5484c, type: 3}
+  m_Name: occam_bonsai_centered
+  m_EditorClassIdentifier: 
+  m_FormatVersion: 20231020
+  m_SplatCount: 1332017
+  m_BoundsMin: {x: -7.4599857, y: -9.420234, z: -4.129871}
+  m_BoundsMax: {x: 7.4599857, y: 9.420234, z: 4.129871}
+  m_DataHash:
+    serializedVersion: 2
+    Hash: e3bf7621afb1545eaf5130bcfa24d426
+  m_PosFormat: 2
+  m_ScaleFormat: 3
+  m_SHFormat: 8
+  m_ColorFormat: 3
+  m_PosData: {fileID: 4900000, guid: 415bc6dc5503e487da695fc292546208, type: 3}
+  m_ColorData: {fileID: 4900000, guid: 54f9c00446cfa4218b68fcc1ef479af4, type: 3}
+  m_OtherData: {fileID: 4900000, guid: 8d47c23ea890f4344adfb7336aa93d99, type: 3}
+  m_SHData: {fileID: 4900000, guid: b84c5992a268249758a49e19d9eb02b3, type: 3}
+  m_ChunkData: {fileID: 4900000, guid: e5bf18377367a42368b53d69b7fcd55e, type: 3}
+  m_Cameras: []
