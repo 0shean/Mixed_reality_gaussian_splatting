@@ -35,6 +35,8 @@ namespace GaussianSplatting.Editor
         SerializedProperty m_PropShaderDebugPoints;
         SerializedProperty m_PropShaderDebugBoxes;
         SerializedProperty m_PropCSSplatUtilities;
+        SerializedProperty m_PropCanonicalSimilarities;
+        SerializedProperty m_PropQuerySimilarities;
 
         bool m_ResourcesExpanded = false;
         int m_CameraIndex = 0;
@@ -75,6 +77,8 @@ namespace GaussianSplatting.Editor
             m_PropShaderDebugPoints = serializedObject.FindProperty("m_ShaderDebugPoints");
             m_PropShaderDebugBoxes = serializedObject.FindProperty("m_ShaderDebugBoxes");
             m_PropCSSplatUtilities = serializedObject.FindProperty("m_CSSplatUtilities");
+            m_PropCanonicalSimilarities = serializedObject.FindProperty("m_CanonicalSimilarities");
+            m_PropQuerySimilarities = serializedObject.FindProperty("m_QuerySimilarities");
 
             s_AllEditors.Add(this);
         }
@@ -144,6 +148,10 @@ namespace GaussianSplatting.Editor
             {
                 MultiEditGUI();
             }
+
+            EditorGUILayout.Space();
+            EditorGUILayout.PropertyField(m_PropCanonicalSimilarities);
+            EditorGUILayout.PropertyField(m_PropQuerySimilarities);
 
             serializedObject.ApplyModifiedProperties();
         }

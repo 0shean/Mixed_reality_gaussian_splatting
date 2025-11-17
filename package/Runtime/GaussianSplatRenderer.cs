@@ -262,6 +262,12 @@ namespace GaussianSplatting.Runtime
         internal GraphicsBuffer m_GpuView;
         internal GraphicsBuffer m_GpuIndexBuffer;
 
+        // Pointers to files containing similarity scores in buffers.
+        public TextAsset m_CanonicalSimilarities;
+        public TextAsset m_QuerySimilarities;
+        internal GraphicsBuffer m_GpuCanonicalSimilarities;
+        internal GraphicsBuffer m_GpuQuerySimilarities;
+
         // these buffers are only for splat editing, and are lazily created
         GraphicsBuffer m_GpuEditCutouts;
         GraphicsBuffer m_GpuEditCountsBounds;
@@ -404,6 +410,38 @@ namespace GaussianSplatting.Runtime
                 m_GpuChunksValid = false;
             }
 
+            // If similarity data files are provided, load them into GPU buffers.
+            m_GpuCanonicalSimilarities?.Dispose();
+            m_GpuQuerySimilarities?.Dispose();
+            if (m_CanonicalSimilarities != null && m_CanonicalSimilarities.bytes.Length > 0)
+            {
+                int count = m_CanonicalSimilarities.bytes.Length / sizeof(float);
+                m_GpuCanonicalSimilarities = new GraphicsBuffer(GraphicsBuffer.Target.Structured, count, sizeof(float))
+                {
+                    name = "GaussianCanonicalSimilarities"
+                };
+                m_GpuCanonicalSimilarities.SetData(m_CanonicalSimilarities.bytes);
+                // Assert that count is the same as num splats.
+                if (count != m_SplatCount)
+                {
+                    Debug.LogWarning($"Canonical similarities count {count} does not match splat count {m_SplatCount}.");
+                }
+            }
+            if (m_QuerySimilarities != null && m_QuerySimilarities.bytes.Length > 0)
+            {
+                int count = m_QuerySimilarities.bytes.Length / sizeof(float);
+                m_GpuQuerySimilarities = new GraphicsBuffer(GraphicsBuffer.Target.Structured, count, sizeof(float))
+                {
+                    name = "GaussianQuerySimilarities"
+                };
+                m_GpuQuerySimilarities.SetData(m_QuerySimilarities.bytes);
+                // Assert that count is the same as num splats.
+                if (count != m_SplatCount)
+                {
+                    Debug.LogWarning($"Query similarities count {count} does not match splat count {m_SplatCount}.");
+                }
+            }
+
             m_GpuView = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.splatCount, kGpuViewDataSize);
             m_GpuIndexBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Index, 36, 2);
             // cube indices, most often we use only the first quad
@@ -543,6 +581,9 @@ namespace GaussianSplatting.Runtime
             DisposeBuffer(ref m_GpuIndexBuffer);
             DisposeBuffer(ref m_GpuSortDistances);
             DisposeBuffer(ref m_GpuSortKeys);
+
+            DisposeBuffer(ref m_GpuCanonicalSimilarities);
+            DisposeBuffer(ref m_GpuQuerySimilarities);
 
             DisposeBuffer(ref m_GpuEditSelectedMouseDown);
             DisposeBuffer(ref m_GpuEditPosMouseDown);

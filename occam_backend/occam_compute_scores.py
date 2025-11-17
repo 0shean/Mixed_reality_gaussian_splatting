@@ -43,42 +43,44 @@ def load_occam_features_from_ply(path: str):
     plydata = PlyData.read(path)
     vertex_data = plydata['vertex'].data
 
-    num_vertices = len(vertex_data)
-    feature_dim = 512  # Assuming 512-dim features
+    feature_dim = 512
+    feature_fields = [f'lang_feat_logit_{j}' for j in range(feature_dim)]
 
-    features = np.zeros((num_vertices, feature_dim), dtype='float32')
+    features = np.column_stack([vertex_data[field] for field in feature_fields]).astype('float32')
 
-    for i in range(num_vertices):
-        for j in range(feature_dim):
-            features[i, j] = vertex_data[i][f'lang_feat_logit_{j}']
+    print("Successfully loaded OCCAM features from PLY file, shape is", features.shape)
 
     return features
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) != 3:
-        print("Usage: python occam_compute_scores.py <text_prompt> <output_file>")
+    if len(sys.argv) != 2:
+        print("Usage: python occam_compute_scores.py <input_ply_file>")
         sys.exit(1)
 
-    text_prompt = sys.argv[1]
-    output_file = sys.argv[2]
+    input_ply_file = sys.argv[1]
 
     # Need to load occam features from a .bin file.
+    gaussian_occam_features = load_occam_features_from_ply(input_ply_file)
 
     computer = OccamScoreComputer()
-    scores = computer.clip_embedding(text_prompt)
 
-    known_prompts = ["bonsai forest", "a photo of a tree"]
-    print("Known prompts: ", known_prompts)
-    known_embeddings = [computer.clip_embedding(p) for p in known_prompts]
+    # known_prompts = ["bonsai forest", "a photo of a tree"]
+    # print("Known prompts: ", known_prompts)
+    # known_embeddings = [computer.clip_embedding(p) for p in known_prompts]
 
-    known_array = np.vstack(known_embeddings)
+    # known_array = np.vstack(known_embeddings)
 
     while True:
-        raw_input = input("Enter prompt: ")
+        raw_input = input("Enter CLIP prompt: ")
         text_embedding = computer.clip_embedding(raw_input)
-        similarity = computer.compute_similarities(known_array, text_embedding)
-        print(similarity)
+        similarity = computer.compute_similarities(gaussian_occam_features, text_embedding)
+        print(similarity.max(), similarity.min(), similarity.mean())
+
+        output_file = f"{raw_input}_similarity_scores.bin"
+        # Write the similarity scores to the output file N floats of size 4 bytes
+        similarity.tofile(output_file)
+        print(f"Saved scores to {output_file}")
 
     # Save scores to output file
     # scores.tofile(output_file)
