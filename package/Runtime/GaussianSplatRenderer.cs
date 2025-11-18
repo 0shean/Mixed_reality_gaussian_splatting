@@ -164,6 +164,9 @@ namespace GaussianSplatting.Runtime
                 cmb.BeginSample(s_ProfDraw);
                 cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, displayMat, 0, topology, indexCount, instanceCount, mpb);
                 cmb.EndSample(s_ProfDraw);
+
+                // Now I want to do a step where I take the softmax over all pixels.
+
             }
             return matComposite;
         }
@@ -202,6 +205,33 @@ namespace GaussianSplatting.Runtime
             // add sorting, view calc and drawing commands for each splat object
             Material matComposite = SortAndRenderSplats(cam, m_CommandBuffer);
 
+            RenderTexture softmaxRT = new RenderTexture(
+                cam.pixelWidth,
+                cam.pixelHeight,
+                0,
+                GraphicsFormat.R16G16B16A16_SFloat
+            );
+            softmaxRT.enableRandomWrite = true;   // 🔥 IMPORTANT
+            softmaxRT.useMipMap = false;
+            softmaxRT.Create();
+            m_CommandBuffer.BeginSample("SoftmaxPass");
+
+            ComputeShader cs = m_ActiveSplats[0].Item1.m_CSSplatUtilities;
+            int kernel = cs.FindKernel("CSRedBlueSoftmax");
+
+            m_CommandBuffer.SetRenderTarget(softmaxRT);   // <-- This makes Frame Debugger list it
+
+            m_CommandBuffer.SetComputeTextureParam(cs, kernel, "InputTex",  GaussianSplatRenderer.Props.GaussianSplatRT);
+            m_CommandBuffer.SetComputeTextureParam(cs, kernel, "OutputTex", softmaxRT);
+
+            int gx = Mathf.CeilToInt(cam.pixelWidth  / 8f);
+            int gy = Mathf.CeilToInt(cam.pixelHeight / 8f);
+
+            m_CommandBuffer.DispatchCompute(cs, kernel, gx, gy, 1);
+            m_CommandBuffer.EndSample("SoftmaxPass");
+
+            softmaxRT.Release();
+
             // compose
             m_CommandBuffer.BeginSample(s_ProfCompose);
             m_CommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
@@ -221,6 +251,7 @@ namespace GaussianSplatting.Runtime
             DebugPointIndices,
             DebugBoxes,
             DebugChunkBounds,
+            Similarities,
         }
         public GaussianSplatAsset m_Asset;
 
@@ -362,6 +393,7 @@ namespace GaussianSplatting.Runtime
             ScaleSelection,
             ExportData,
             CopySplats,
+            RedBlueSoftmax,
         }
 
         public bool HasValidAsset =>

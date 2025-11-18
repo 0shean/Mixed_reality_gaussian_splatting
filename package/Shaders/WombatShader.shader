@@ -31,6 +31,8 @@ struct v2f
 StructuredBuffer<SplatViewData> _SplatViewData;
 ByteAddressBuffer _SplatSelectedBits;
 uint _SplatBitsValid;
+StructuredBuffer<float> _SplatQuerySimilarities;
+StructuredBuffer<float> _SplatCanonicalSimilarities;
 
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 {
@@ -45,9 +47,8 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 	}
 	else
 	{
-		o.col.r = f16tof32(view.color.x >> 16);
-		o.col.g = f16tof32(view.color.x);
-		o.col.b = f16tof32(view.color.y >> 16);
+		o.col.r = _SplatQuerySimilarities[instID];
+		o.col.b = _SplatCanonicalSimilarities[instID];
 		o.col.a = f16tof32(view.color.y);
 
 		uint idx = vtxID;
@@ -103,13 +104,7 @@ half4 frag (v2f i) : SV_Target
     if (alpha < 1.0/255.0)
         discard;
 
-	// Keep if red is dominant
-	// if (i.col.r < 0.5 || i.col.r < i.col.g * 2 || i.col.r < i.col.b * 2)
-	// {
-	// 	discard;
-	// }
     half4 res = half4(i.col.rgb * alpha, alpha);
-    // half4 res = half4(half3(1,0,1) * alpha, alpha);
     return res;
 }
 ENDCG

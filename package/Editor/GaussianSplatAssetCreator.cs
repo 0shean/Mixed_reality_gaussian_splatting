@@ -278,8 +278,9 @@ namespace GaussianSplatting.Editor
             };
             boundsJob.Schedule().Complete();
 
-            EditorUtility.DisplayProgressBar(kProgressTitle, "Morton reordering", 0.05f);
-            ReorderMorton(inputSplats, boundsMin, boundsMax);
+            // EditorUtility.DisplayProgressBar(kProgressTitle, "Morton reordering", 0.05f);
+            // ReorderMorton(inputSplats, boundsMin, boundsMax);
+
 
             // cluster SHs
             NativeArray<int> splatSHIndices = default;
