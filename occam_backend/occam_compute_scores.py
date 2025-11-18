@@ -54,34 +54,42 @@ def load_occam_features_from_ply(path: str):
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) != 2:
-        print("Usage: python occam_compute_scores.py <input_ply_file>")
+    if len(sys.argv) != 3:
+        print("Usage: python occam_compute_scores.py <input_ply_file> <output_file>")
         sys.exit(1)
 
     input_ply_file = sys.argv[1]
+    output_file = sys.argv[2]
 
     # Need to load occam features from a .bin file.
     gaussian_occam_features = load_occam_features_from_ply(input_ply_file)
 
     computer = OccamScoreComputer()
 
-    # known_prompts = ["bonsai forest", "a photo of a tree"]
-    # print("Known prompts: ", known_prompts)
-    # known_embeddings = [computer.clip_embedding(p) for p in known_prompts]
-
-    # known_array = np.vstack(known_embeddings)
+    known_prompts = ["object"]
+    known_embeddings = [computer.clip_embedding(p) for p in known_prompts]
+    canonical_similarity = computer.compute_similarities(gaussian_occam_features, known_embeddings[0])
+    print("Canonical 'object' prompt similarities:", canonical_similarity.max(), canonical_similarity.min(), canonical_similarity.mean())
 
     while True:
         raw_input = input("Enter CLIP prompt: ")
         text_embedding = computer.clip_embedding(raw_input)
         similarity = computer.compute_similarities(gaussian_occam_features, text_embedding)
-        print(similarity.max(), similarity.min(), similarity.mean())
+        print("Query prompt similarities:", similarity.max(), similarity.min(), similarity.mean())
 
-        output_file = f"{raw_input}_similarity_scores.bin"
+        relevancy_score = np.exp(similarity) / (np.exp(similarity) + np.exp(canonical_similarity))
+        print("Query prompt relevancy score:", relevancy_score.max(), relevancy_score.min(), relevancy_score.mean())
+
+        # Get indices of the 100 largest elements
+        top_n = 100
+        top_indices = np.argpartition(-relevancy_score, top_n)[:top_n]  # unsorted top 100
+        # Optional: sort them by value descending
+        top_indices = top_indices[np.argsort(-relevancy_score[top_indices])]
+
+        print("Indices of top 100 relevancy scores:", top_indices)
+        print("Std and mean of top indices:", top_indices.std(), top_indices.mean())
+
+
         # Write the similarity scores to the output file N floats of size 4 bytes
         similarity.tofile(output_file)
         print(f"Saved scores to {output_file}")
-
-    # Save scores to output file
-    # scores.tofile(output_file)
-    # print(f"Saved scores to {output_file}")
