@@ -759,6 +759,25 @@ void CSCopySplats (uint3 id : SV_DispatchThreadID)
     }
 }
 
+float3 HeatmapColor(float value)
+{
+    // Clamp just in case
+    value = saturate(value);
+
+    float3 color;
+
+    if (value < 0.25)       // blue → cyan
+        color = lerp(float3(0, 0, 1), float3(0, 1, 1), value / 0.25);
+    else if (value < 0.5)   // cyan → green
+        color = lerp(float3(0, 1, 1), float3(0, 1, 0), (value - 0.25)/0.25);
+    else if (value < 0.75)  // green → yellow
+        color = lerp(float3(0, 1, 0), float3(1, 1, 0), (value - 0.5)/0.25);
+    else                    // yellow → red
+        color = lerp(float3(1, 1, 0), float3(1, 0, 0), (value - 0.75)/0.25);
+
+    return color;
+}
+
 Texture2D<float4> InputTex;
 RWTexture2D<float4> OutputTex;
 
@@ -782,8 +801,15 @@ void CSRedBlueSoftmax(uint3 id : SV_DispatchThreadID)
     float softA = ea / denom;
     float softB = eb / denom;
 
+    // Let's try normalizing it. (dummy values because i don't want to compute global max / min)
+    float globalMax = 0.55;
+    float globalMin = 0.45;
+    float normalized_softA = (softA - globalMin) / (globalMax - globalMin);
+
+    float3 col = HeatmapColor(normalized_softA);
+
     // Output in RG; keep alpha/green if needed
-    OutputTex[uv] = float4(softA, softB, 0, 1);
+    OutputTex[uv] = float4(col.r, col.g, col.b, 1);
 }
 
 [numthreads(8,8,1)]
