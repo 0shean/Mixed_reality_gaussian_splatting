@@ -780,6 +780,8 @@ float3 HeatmapColor(float value)
 
 Texture2D<float4> InputTex;
 RWTexture2D<float4> OutputTex;
+float _MaxRelevancyScore;
+float _MinRelevancyScore;
 
 [numthreads(8,8,1)]
 void CSRedBlueSoftmax(uint3 id : SV_DispatchThreadID)
@@ -788,25 +790,29 @@ void CSRedBlueSoftmax(uint3 id : SV_DispatchThreadID)
 
     float4 c = InputTex[uv];
 
-    float a = c.r;
-    float b = c.b;
+    float queryBlended = c.r;  // The r channel contains the query value.
+    float canonicalBlended = c.b;  // Canonical embedding.
 
     // Numeric stabilization
-    float m = max(a, b);
-    float ea = exp(a - m);
-    float eb = exp(b - m);
+    float m = max(queryBlended, canonicalBlended);
+    float ea = exp(queryBlended - m);
+    float eb = exp(canonicalBlended - m);
 
     float denom = ea + eb;
+    float rawScore = ea / denom;
 
-    float softA = ea / denom;
-    float softB = eb / denom;
+    if (rawScore < 0.5) {
+        // Below 0.5, not closer to the query than the generic query. Let's make it grey.
+        OutputTex[uv] = float4(0.5, 0.5, 0.5, 1);
+        return;
+    }
 
     // Let's try normalizing it. (dummy values because i don't want to compute global max / min)
-    float globalMax = 0.55;
-    float globalMin = 0.45;
-    float normalized_softA = (softA - globalMin) / (globalMax - globalMin);
+    float globalMax = _MaxRelevancyScore;
+    float globalMin = _MinRelevancyScore;
+    float normalizedScore = (rawScore - globalMin) / (globalMax - globalMin);
 
-    float3 col = HeatmapColor(normalized_softA);
+    float3 col = HeatmapColor(normalizedScore);
 
     // Output in RG; keep alpha/green if needed
     OutputTex[uv] = float4(col.r, col.g, col.b, 1);

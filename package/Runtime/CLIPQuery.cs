@@ -8,62 +8,92 @@ using System.Linq;
 public class ClipClient : MonoBehaviour
 {
     [Header("Server Settings")]
-    public string serverUrl = "http://127.0.0.1:8000/embed_text";
+    public string serverUrl = "http://127.0.0.1:8000";
 
     public string textInput = "a photo of a wombat";
 
-    /// <summary>
-    /// Request a CLIP text embedding asynchronously.
-    /// </summary>
-    public async Task<float[]> RequestEmbeddingAsync(string text)
+    public async Task<float[]> RequestSimilarityBufferAsync(string text)
     {
-        string jsonData = "{\"text\":\"" + text + "\"}";
-        using (var request = new UnityWebRequest(serverUrl, "POST"))
+        string json = "{\"text\":\"" + text + "\"}";
+
+        using (var request = new UnityWebRequest(serverUrl + "/similarity_binary", "POST"))
         {
-            byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonData);
-            request.uploadHandler = new UploadHandlerRaw(bodyRaw);
+            byte[] body = Encoding.UTF8.GetBytes(json);
+            request.uploadHandler = new UploadHandlerRaw(body);
             request.downloadHandler = new DownloadHandlerBuffer();
             request.SetRequestHeader("Content-Type", "application/json");
 
-            // Start request and await completion
             var operation = request.SendWebRequest();
-
             while (!operation.isDone)
-                await Task.Yield(); // let Unity’s main thread keep running
+                await Task.Yield();
 
-            if (request.result == UnityWebRequest.Result.Success)
+            if (request.result != UnityWebRequest.Result.Success)
             {
-                try
-                {
-                    // Parse {"embedding": [ ... ]}
-                    var response = JsonUtility.FromJson<EmbeddingResponse>(request.downloadHandler.text);
-                    return response.embedding;
-                }
-                catch (Exception e)
-                {
-                    Debug.LogError("JSON parse error: " + e.Message);
-                    return null;
-                }
-            }
-            else
-            {
-                Debug.LogError($"Request failed: {request.error}");
+                Debug.LogError($"Binary request failed: {request.error}");
                 return null;
+            }
+
+            // Get raw bytes
+            byte[] data = request.downloadHandler.data;
+
+            // Convert byte[] → float[]
+            int floatCount = data.Length / 4;  // float32 = 4 bytes
+            float[] relevancy = new float[floatCount];
+
+            Buffer.BlockCopy(data, 0, relevancy, 0, data.Length);
+
+            return relevancy;
+        }
+    }
+
+    [Serializable]
+    public class RelevancyExtremaResponse
+    {
+        public float min_relevancy;
+        public float max_relevancy;
+    }
+
+    public async Task<(float min, float max)> RequestRelevancyExtremaAsync(string text)
+    {
+        string json = "{\"text\":\"" + text + "\"}";
+
+        using (var request = new UnityWebRequest(serverUrl + "/relevancy_extrema", "POST"))
+        {
+            byte[] body = Encoding.UTF8.GetBytes(json);
+            request.uploadHandler = new UploadHandlerRaw(body);
+            request.downloadHandler = new DownloadHandlerBuffer();
+            request.SetRequestHeader("Content-Type", "application/json");
+
+            var op = request.SendWebRequest();
+            while (!op.isDone)
+                await Task.Yield();
+
+            if (request.result != UnityWebRequest.Result.Success)
+            {
+                Debug.LogError("Extrema request failed: " + request.error);
+                return (0f, 0f);
+            }
+
+            try
+            {
+                var response = JsonUtility.FromJson<RelevancyExtremaResponse>(request.downloadHandler.text);
+                return (response.min_relevancy, response.max_relevancy);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("JSON parse error: " + e.Message);
+                Debug.LogError("Response text was: " + request.downloadHandler.text);
+                return (0f, 0f);
             }
         }
     }
 
-    [ContextMenu("Request Embedding")]
-    private async void RequestEmbeddingFromInspector()
+    [ContextMenu("Request Similarity Scores")]
+    private async void RequestSimilarityFromInspector()
     {
-        float[] embedding = await RequestEmbeddingAsync(textInput);
-        if (embedding != null)
-            Debug.Log("Successfully received embedding, length: " + embedding.Length);
+        float[] similarityBuf = await RequestSimilarityBufferAsync(textInput);
+        if (similarityBuf != null)
+            Debug.Log("Successfully received similarity scores for embedding, length: " + similarityBuf.Length);
     }
 
-    [Serializable]
-    private class EmbeddingResponse
-    {
-        public float[] embedding;
-    }
 }

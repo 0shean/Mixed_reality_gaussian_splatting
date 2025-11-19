@@ -38,6 +38,8 @@ namespace GaussianSplatting.Editor
         SerializedProperty m_PropCanonicalSimilarities;
         SerializedProperty m_PropQuerySimilarities;
 
+        string editorCLIPQuery = "";
+
         bool m_ResourcesExpanded = false;
         int m_CameraIndex = 0;
 
@@ -152,6 +154,13 @@ namespace GaussianSplatting.Editor
             EditorGUILayout.Space();
             EditorGUILayout.PropertyField(m_PropCanonicalSimilarities);
             EditorGUILayout.PropertyField(m_PropQuerySimilarities);
+
+            EditorGUILayout.Space();
+            editorCLIPQuery = EditorGUILayout.TextField("CLIP query", editorCLIPQuery);
+            if (GUILayout.Button("Process CLIP Query"))
+            {
+                gs.ProcessCLIPQuery(editorCLIPQuery);
+            }
 
             serializedObject.ApplyModifiedProperties();
         }

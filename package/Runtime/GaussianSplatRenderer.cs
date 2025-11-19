@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
@@ -224,6 +225,10 @@ namespace GaussianSplatting.Runtime
             m_CommandBuffer.SetComputeTextureParam(cs, kernel, "InputTex",  GaussianSplatRenderer.Props.GaussianSplatRT);
             m_CommandBuffer.SetComputeTextureParam(cs, kernel, "OutputTex", softmaxRT);
 
+            // Add the compute max / min relevancy scores.
+            m_CommandBuffer.SetComputeFloatParam(cs, "_MaxRelevancyScore", m_ActiveSplats[0].Item1.m_MaxRelevancyScore);
+            m_CommandBuffer.SetComputeFloatParam(cs, "_MinRelevancyScore", m_ActiveSplats[0].Item1.m_MinRelevancyScore);
+
             int gx = Mathf.CeilToInt(cam.pixelWidth  / 8f);
             int gy = Mathf.CeilToInt(cam.pixelHeight / 8f);
 
@@ -298,6 +303,9 @@ namespace GaussianSplatting.Runtime
         public TextAsset m_QuerySimilarities;
         internal GraphicsBuffer m_GpuCanonicalSimilarities;
         internal GraphicsBuffer m_GpuQuerySimilarities;
+
+        public float m_MaxRelevancyScore = 1.0f;
+        public float m_MinRelevancyScore = 0.0f;
 
         // these buffers are only for splat editing, and are lazily created
         GraphicsBuffer m_GpuEditCutouts;
@@ -1036,6 +1044,32 @@ namespace GaussianSplatting.Runtime
 
             DispatchUtilsAndExecute(cmb, KernelIndices.ExportData, m_SplatCount);
             return true;
+        }
+
+        public async Task ProcessCLIPQuery(string clipText)
+        {
+            var clipClient = GetComponent<ClipClient>();
+            if (clipClient == null)
+            {
+                Debug.LogError("ClipClient component not found on this GameObject!");
+                return;
+            }
+            // float[] embedding = await clipClient.RequestEmbeddingAsync(clipText);
+            float[] similarityBuf = await clipClient.RequestSimilarityBufferAsync(clipText);
+            if (similarityBuf == null)
+            {
+                Debug.LogError("Failed to receive similarity scores in ProcessCLIPQuery.");
+                return;
+            }
+            Debug.Log("Successfully received similarity scores in ProcessCLIPQuery. length: " + similarityBuf.Length);
+
+            (float, float) minMax = await clipClient.RequestRelevancyExtremaAsync(clipText);
+            Debug.Log($"Received relevancy extrema: min={minMax.Item1}, max={minMax.Item2}");
+            m_MinRelevancyScore = minMax.Item1;
+            m_MaxRelevancyScore = minMax.Item2;
+
+            // Copy it over to the GPU buffer for query similarities
+            m_GpuQuerySimilarities.SetData(similarityBuf);
         }
 
         public void EditSetSplatCount(int newSplatCount)
