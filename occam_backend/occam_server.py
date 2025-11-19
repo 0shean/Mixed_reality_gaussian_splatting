@@ -66,8 +66,8 @@ class TextInput(BaseModel):
     text: str
 
 
-@app.post("/embed_text")
-def embed_text(
+@app.post("/relevancy_extrema")
+def relevancy_extrema(
     input: TextInput,
     state: ServerState = Depends(get_state),
 ):
@@ -96,7 +96,7 @@ def embed_text(
         "max_relevancy": max_relevancy,
     }
 
-@app.post("/embed_text_binary")
+@app.post("/similarity_binary")
 def similarity_binary(
     input: TextInput,
     state: ServerState = Depends(get_state)
