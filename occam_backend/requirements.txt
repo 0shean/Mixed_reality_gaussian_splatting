@@ -1,0 +1,7 @@
+pydantic
+fastapi
+torch
+numpy<2
+uvicorn
+plyfile
+open-clip-torch

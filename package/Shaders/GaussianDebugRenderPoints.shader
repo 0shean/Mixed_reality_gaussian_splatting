@@ -9,7 +9,7 @@ Shader "Gaussian Splatting/Debug/Render Points"
         {
             ZWrite On
             Cull Off
-            
+
 CGPROGRAM
 #pragma vertex vert
 #pragma fragment frag
@@ -27,6 +27,8 @@ struct v2f
 float _SplatSize;
 bool _DisplayIndex;
 int _SplatCount;
+StructuredBuffer<float> _SplatQuerySimilarities;
+StructuredBuffer<float> _SplatCanonicalSimilarities;
 
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 {
@@ -48,9 +50,22 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
     o.color.rgb = saturate(splat.sh.col);
     if (_DisplayIndex)
     {
-        o.color.r = frac((float)splatIndex / (float)_SplatCount * 100);
-        o.color.g = frac((float)splatIndex / (float)_SplatCount * 10);
-        o.color.b = (float)splatIndex / (float)_SplatCount;
+        // Compute the softmax relevancy score for this splat.
+        float querySim = _SplatQuerySimilarities[splatIndex];
+        float canonicalSim = _SplatCanonicalSimilarities[splatIndex];
+        float relevancyScore = exp(querySim) / (exp(querySim) + exp(canonicalSim) + 1e-6);
+        if (relevancyScore > 0.51)
+        {
+            o.color.r = 1.0;
+            o.color.g = 0.0;
+            o.color.b = 0.0;
+        }
+        else
+        {
+            o.color.r = 0.0;
+            o.color.g = 0.0;
+            o.color.b = 1.0;
+        }
     }
 
     FlipProjectionIfBackbuffer(o.vertex);

@@ -16,6 +16,8 @@
 #pragma kernel CSScaleSelection
 #pragma kernel CSExportData
 #pragma kernel CSCopySplats
+#pragma kernel CSRelevancyScoreColoring
+#pragma kernel CSRelevancyScoreHeatmap
 
 // DeviceRadixSort
 #pragma multi_compile __ KEY_UINT KEY_INT KEY_FLOAT
@@ -195,7 +197,7 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
 
     SplatData splat = LoadSplatData(idx);
     SplatViewData view = (SplatViewData)0;
-    
+
     float3 centerWorldPos = mul(_MatrixObjectToWorld, float4(splat.pos,1)).xyz;
     float4 centerClipPos = mul(UNITY_MATRIX_VP, float4(centerWorldPos, 1));
     half opacityScale = _SplatOpacityScale;
@@ -234,7 +236,7 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         cov3d0 *= splatScale2;
         cov3d1 *= splatScale2;
         float3 cov2d = CalcCovariance2D(splat.pos, cov3d0, cov3d1, _MatrixMV, UNITY_MATRIX_P, _VecScreenParams);
-        
+
         DecomposeCovariance(cov2d, view.axis1, view.axis2);
 
         float3 worldViewDir = _VecWorldSpaceCameraPos.xyz - centerWorldPos;
@@ -247,7 +249,7 @@ void CSCalcViewData (uint3 id : SV_DispatchThreadID)
         view.color.x = (f32tof16(col.r) << 16) | f32tof16(col.g);
         view.color.y = (f32tof16(col.b) << 16) | f32tof16(col.a);
     }
-    
+
     _SplatViewData[idx] = view;
 }
 
@@ -646,29 +648,29 @@ void CSExportData (uint3 id : SV_DispatchThreadID)
     dst.pos = src.pos;
     dst.nor = 0;
     dst.dc0 = ColorToSH0(src.sh.col);
-    
+
     dst.shR14 = float4(src.sh.sh1.r, src.sh.sh2.r, src.sh.sh3.r, src.sh.sh4.r);
     dst.shR58 = float4(src.sh.sh5.r, src.sh.sh6.r, src.sh.sh7.r, src.sh.sh8.r);
     dst.shR9C = float4(src.sh.sh9.r, src.sh.sh10.r, src.sh.sh11.r, src.sh.sh12.r);
     dst.shRDF = float3(src.sh.sh13.r, src.sh.sh14.r, src.sh.sh15.r);
-    
+
     dst.shG14 = float4(src.sh.sh1.g, src.sh.sh2.g, src.sh.sh3.g, src.sh.sh4.g);
     dst.shG58 = float4(src.sh.sh5.g, src.sh.sh6.g, src.sh.sh7.g, src.sh.sh8.g);
     dst.shG9C = float4(src.sh.sh9.g, src.sh.sh10.g, src.sh.sh11.g, src.sh.sh12.g);
     dst.shGDF = float3(src.sh.sh13.g, src.sh.sh14.g, src.sh.sh15.g);
-    
+
     dst.shB14 = float4(src.sh.sh1.b, src.sh.sh2.b, src.sh.sh3.b, src.sh.sh4.b);
     dst.shB58 = float4(src.sh.sh5.b, src.sh.sh6.b, src.sh.sh7.b, src.sh.sh8.b);
     dst.shB9C = float4(src.sh.sh9.b, src.sh.sh10.b, src.sh.sh11.b, src.sh.sh12.b);
     dst.shBDF = float3(src.sh.sh13.b, src.sh.sh14.b, src.sh.sh15.b);
-    
+
     dst.opacity = InvSigmoid(src.opacity);
     dst.scale = log(src.scale);
     dst.rot = src.rot.wxyz;
 
     if (isCut)
         dst.nor = 1; // mark as skipped for export
-    
+
     _ExportBuffer[idx] = dst;
 }
 
@@ -755,4 +757,88 @@ void CSCopySplats (uint3 id : SV_DispatchThreadID)
         uint dstBitIdx = dstIdx & 31;
         _CopyDstEditDeleted.InterlockedOr(dstWordIdx * 4, 1u << dstBitIdx);
     }
+}
+
+float3 HeatmapColor(float value)
+{
+    // Clamp just in case
+    value = saturate(value);
+
+    float3 color;
+
+    if (value < 0.25)       // blue → cyan
+        color = lerp(float3(0, 0, 1), float3(0, 1, 1), value / 0.25);
+    else if (value < 0.5)   // cyan → green
+        color = lerp(float3(0, 1, 1), float3(0, 1, 0), (value - 0.25)/0.25);
+    else if (value < 0.75)  // green → yellow
+        color = lerp(float3(0, 1, 0), float3(1, 1, 0), (value - 0.5)/0.25);
+    else                    // yellow → red
+        color = lerp(float3(1, 1, 0), float3(1, 0, 0), (value - 0.75)/0.25);
+
+    return color;
+}
+
+Texture2D<float4> InputTex;
+RWTexture2D<float4> OutputTex;
+float _MaxRelevancyScore;
+float _MinRelevancyScore;
+
+[numthreads(8,8,1)]
+void CSRelevancyScoreColoring(uint3 id : SV_DispatchThreadID)
+{
+    uint2 uv = id.xy;
+
+    float4 c = InputTex[uv];
+
+    float queryBlended = c.r;  // The r channel contains the query value.
+    float canonicalBlended = c.b;  // Canonical embedding.
+
+    // Numeric stabilization
+    float m = max(queryBlended, canonicalBlended);
+    float ea = exp(queryBlended - m);
+    float eb = exp(canonicalBlended - m);
+
+    float denom = ea + eb;
+    float rawScore = ea / denom;
+
+    if (rawScore <= 0.5) {
+        // Below 0.5, not closer to the query than the generic query.
+        // Use the alpha blended brightness value to make it black / white.
+        OutputTex[uv] = float4(c.g, c.g, c.g, 1);
+        return;
+    }
+
+    // Normalize it with the min / max relevancy score obtained from the CLIP server.
+    float globalMax = _MaxRelevancyScore;
+    float globalMin = _MinRelevancyScore;
+    float normalizedScore = (rawScore - globalMin) / (globalMax - globalMin);
+
+    float3 col = HeatmapColor(normalizedScore);
+
+    // Output in RG; keep alpha/green if needed
+    OutputTex[uv] = float4(col.r, col.g, col.b, 1);
+}
+
+[numthreads(8,8,1)]
+void CSRelevancyScoreHeatmap(uint3 id : SV_DispatchThreadID)
+{
+    uint2 uv = id.xy;
+
+    float4 c = InputTex[uv];
+
+    float a = c.r;
+    float b = c.b;
+
+    // Numeric stabilization
+    float m = max(a, b);
+    float ea = exp(a - m);
+    float eb = exp(b - m);
+
+    float denom = ea + eb;
+
+    float softA = ea / denom;
+    float softB = eb / denom;
+
+    // Output in RG; keep alpha/green if needed
+    // OutputTex[uv] = float4(softA, , 0, 1);
 }

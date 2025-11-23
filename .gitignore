@@ -36,3 +36,7 @@ sysinfo.txt
 # Android/Gradle build caches
 .utmp/
 test_build_BurstDebugInformation_DoNotShip/
+
+# Python
+**/.venv/
+.python-version

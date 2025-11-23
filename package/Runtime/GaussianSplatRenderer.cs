@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
@@ -129,6 +130,7 @@ namespace GaussianSplatting.Runtime
                     GaussianSplatRenderer.RenderMode.DebugPointIndices => gs.m_MatDebugPoints,
                     GaussianSplatRenderer.RenderMode.DebugBoxes => gs.m_MatDebugBoxes,
                     GaussianSplatRenderer.RenderMode.DebugChunkBounds => gs.m_MatDebugBoxes,
+                    GaussianSplatRenderer.RenderMode.OccamSimilarities => gs.m_MatOccamSimilarities,
                     _ => gs.m_MatSplats
                 };
                 if (displayMat == null)
@@ -164,6 +166,44 @@ namespace GaussianSplatting.Runtime
                 cmb.BeginSample(s_ProfDraw);
                 cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, displayMat, 0, topology, indexCount, instanceCount, mpb);
                 cmb.EndSample(s_ProfDraw);
+
+                // Additional step for Occam similarities, compute the softmax of relevancy scores.
+                if (gs.m_RenderMode == GaussianSplatRenderer.RenderMode.OccamSimilarities)
+                {
+                    RenderTexture softmaxRT = new RenderTexture(
+                        cam.pixelWidth,
+                        cam.pixelHeight,
+                        0,
+                        GraphicsFormat.R16G16B16A16_SFloat
+                    );
+                    softmaxRT.enableRandomWrite = true;   // 🔥 IMPORTANT
+                    softmaxRT.useMipMap = false;
+                    softmaxRT.Create();
+                    m_CommandBuffer.BeginSample("RelevancyScorePass");
+
+                    ComputeShader cs = gs.m_CSSplatUtilities;
+                    int kernel = cs.FindKernel("CSRelevancyScoreColoring");
+
+                    m_CommandBuffer.SetRenderTarget(softmaxRT);   // <-- This makes Frame Debugger list it
+
+                    m_CommandBuffer.SetComputeTextureParam(cs, kernel, "InputTex",  GaussianSplatRenderer.Props.GaussianSplatRT);
+                    m_CommandBuffer.SetComputeTextureParam(cs, kernel, "OutputTex", softmaxRT);
+
+                    // Add the compute max / min relevancy scores.
+                    m_CommandBuffer.SetComputeFloatParam(cs, "_MaxRelevancyScore", gs.m_MaxRelevancyScore);
+                    m_CommandBuffer.SetComputeFloatParam(cs, "_MinRelevancyScore", gs.m_MinRelevancyScore);
+
+                    int gx = Mathf.CeilToInt(cam.pixelWidth  / 8f);
+                    int gy = Mathf.CeilToInt(cam.pixelHeight / 8f);
+
+                    m_CommandBuffer.DispatchCompute(cs, kernel, gx, gy, 1);
+                    m_CommandBuffer.EndSample("RelevancyScorePass");
+
+                        // ⭐ NEW: blit softmax result directly to camera target
+                    m_CommandBuffer.Blit(softmaxRT, BuiltinRenderTextureType.CameraTarget);
+
+                    softmaxRT.Release();
+                }
             }
             return matComposite;
         }
@@ -202,11 +242,18 @@ namespace GaussianSplatting.Runtime
             // add sorting, view calc and drawing commands for each splat object
             Material matComposite = SortAndRenderSplats(cam, m_CommandBuffer);
 
-            // compose
-            m_CommandBuffer.BeginSample(s_ProfCompose);
-            m_CommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
-            m_CommandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
-            m_CommandBuffer.EndSample(s_ProfCompose);
+            // compose unless overridden by OccamSimilarities
+            if (matComposite != null && m_ActiveSplats[0].Item1.m_RenderMode != GaussianSplatRenderer.RenderMode.OccamSimilarities)
+            {
+                m_CommandBuffer.BeginSample(s_ProfCompose);
+                m_CommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
+                m_CommandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
+                m_CommandBuffer.EndSample(s_ProfCompose);
+            }
+            // m_CommandBuffer.BeginSample(s_ProfCompose);
+            // m_CommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
+            // m_CommandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
+            // m_CommandBuffer.EndSample(s_ProfCompose);
             m_CommandBuffer.ReleaseTemporaryRT(GaussianSplatRenderer.Props.GaussianSplatRT);
         }
     }
@@ -221,6 +268,7 @@ namespace GaussianSplatting.Runtime
             DebugPointIndices,
             DebugBoxes,
             DebugChunkBounds,
+            OccamSimilarities,
         }
         public GaussianSplatAsset m_Asset;
 
@@ -247,6 +295,7 @@ namespace GaussianSplatting.Runtime
         public Shader m_ShaderComposite;
         public Shader m_ShaderDebugPoints;
         public Shader m_ShaderDebugBoxes;
+        public Shader m_ShaderOccamSimilarities;
         [Tooltip("Gaussian splatting compute shader")]
         public ComputeShader m_CSSplatUtilities;
 
@@ -261,6 +310,15 @@ namespace GaussianSplatting.Runtime
         internal bool m_GpuChunksValid;
         internal GraphicsBuffer m_GpuView;
         internal GraphicsBuffer m_GpuIndexBuffer;
+
+        // Pointers to files containing similarity scores in buffers.
+        public const string m_canonicalEmbeddingStr = "object";
+        internal GraphicsBuffer m_GpuCanonicalSimilarities;
+        private bool m_CanonicalSimilaritiesLoaded = false;
+        internal GraphicsBuffer m_GpuQuerySimilarities;
+
+        public float m_MaxRelevancyScore = 1.0f;
+        public float m_MinRelevancyScore = 0.0f;
 
         // these buffers are only for splat editing, and are lazily created
         GraphicsBuffer m_GpuEditCutouts;
@@ -278,6 +336,7 @@ namespace GaussianSplatting.Runtime
         internal Material m_MatComposite;
         internal Material m_MatDebugPoints;
         internal Material m_MatDebugBoxes;
+        internal Material m_MatOccamSimilarities;
 
         internal int m_FrameCounter;
         GaussianSplatAsset m_PrevAsset;
@@ -356,6 +415,7 @@ namespace GaussianSplatting.Runtime
             ScaleSelection,
             ExportData,
             CopySplats,
+            RedBlueSoftmax,
         }
 
         public bool HasValidAsset =>
@@ -404,6 +464,21 @@ namespace GaussianSplatting.Runtime
                 m_GpuChunksValid = false;
             }
 
+            // Initialize empty similarity buffers :)
+            m_GpuCanonicalSimilarities?.Dispose();
+            m_GpuQuerySimilarities?.Dispose();
+            m_GpuCanonicalSimilarities = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, sizeof(float))
+            {
+                name = "GaussianCanonicalSimilarities"
+            };
+            // Set the bool false to indicate we should load it on our first query.
+            m_CanonicalSimilaritiesLoaded = false;
+
+            m_GpuQuerySimilarities = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, sizeof(float))
+            {
+                name = "GaussianQuerySimilarities"
+            };
+
             m_GpuView = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.splatCount, kGpuViewDataSize);
             m_GpuIndexBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Index, 36, 2);
             // cube indices, most often we use only the first quad
@@ -445,7 +520,7 @@ namespace GaussianSplatting.Runtime
         }
 
         bool resourcesAreSetUp => m_ShaderSplats != null && m_ShaderComposite != null && m_ShaderDebugPoints != null &&
-                                  m_ShaderDebugBoxes != null && m_CSSplatUtilities != null && SystemInfo.supportsComputeShaders;
+                                  m_ShaderDebugBoxes != null && m_CSSplatUtilities != null && m_ShaderOccamSimilarities != null && SystemInfo.supportsComputeShaders;
 
         public void EnsureMaterials()
         {
@@ -455,6 +530,7 @@ namespace GaussianSplatting.Runtime
                 m_MatComposite = new Material(m_ShaderComposite) {name = "GaussianClearDstAlpha"};
                 m_MatDebugPoints = new Material(m_ShaderDebugPoints) {name = "GaussianDebugPoints"};
                 m_MatDebugBoxes = new Material(m_ShaderDebugBoxes) {name = "GaussianDebugBoxes"};
+                m_MatOccamSimilarities = new Material(m_ShaderOccamSimilarities) {name = "GaussianOccamSimilarities"};
             }
         }
 
@@ -514,6 +590,8 @@ namespace GaussianSplatting.Runtime
             mat.SetBuffer(Props.SplatPos, m_GpuPosData);
             mat.SetBuffer(Props.SplatOther, m_GpuOtherData);
             mat.SetBuffer(Props.SplatSH, m_GpuSHData);
+            mat.SetBuffer(Shader.PropertyToID("_SplatQuerySimilarities"), m_GpuQuerySimilarities);
+            mat.SetBuffer(Shader.PropertyToID("_SplatCanonicalSimilarities"), m_GpuCanonicalSimilarities);
             mat.SetTexture(Props.SplatColor, m_GpuColorData);
             mat.SetBuffer(Props.SplatSelectedBits, m_GpuEditSelected ?? m_GpuPosData);
             mat.SetBuffer(Props.SplatDeletedBits, m_GpuEditDeleted ?? m_GpuPosData);
@@ -543,6 +621,9 @@ namespace GaussianSplatting.Runtime
             DisposeBuffer(ref m_GpuIndexBuffer);
             DisposeBuffer(ref m_GpuSortDistances);
             DisposeBuffer(ref m_GpuSortKeys);
+
+            DisposeBuffer(ref m_GpuCanonicalSimilarities);
+            DisposeBuffer(ref m_GpuQuerySimilarities);
 
             DisposeBuffer(ref m_GpuEditSelectedMouseDown);
             DisposeBuffer(ref m_GpuEditPosMouseDown);
@@ -574,6 +655,7 @@ namespace GaussianSplatting.Runtime
             DestroyImmediate(m_MatComposite);
             DestroyImmediate(m_MatDebugPoints);
             DestroyImmediate(m_MatDebugBoxes);
+            DestroyImmediate(m_MatOccamSimilarities);
         }
 
         internal void CalcViewData(CommandBuffer cmb, Camera cam)
@@ -955,6 +1037,57 @@ namespace GaussianSplatting.Runtime
 
             DispatchUtilsAndExecute(cmb, KernelIndices.ExportData, m_SplatCount);
             return true;
+        }
+
+        public async Task ProcessCLIPQuery(string clipText)
+        {
+            Debug.Log("Processing CLIP query: " + clipText);
+            var clipClient = GetComponent<ClipClient>();
+            if (clipClient == null)
+            {
+                Debug.LogError("ClipClient component not found on this GameObject!");
+                return;
+            }
+            if (!m_CanonicalSimilaritiesLoaded)
+            {
+                Debug.Log("Loading canonical similarities for the first time.");
+                float[] canonicalBuf = await clipClient.RequestSimilarityBufferAsync(m_canonicalEmbeddingStr);
+                if (canonicalBuf == null)
+                {
+                    Debug.LogError("Failed to receive canonical similarity scores in ProcessCLIPQuery.");
+                    return;
+                }
+                if (canonicalBuf.Length != splatCount)
+                {
+                    Debug.LogError($"Received canonical embedding buffer length {canonicalBuf.Length} does not match splat count {splatCount}.");
+                    return;
+                }
+                m_GpuCanonicalSimilarities.SetData(canonicalBuf);
+                m_CanonicalSimilaritiesLoaded = true;
+            }
+
+            // Let's change this to also initialize the canonical embedding.
+            float[] similarityBuf = await clipClient.RequestSimilarityBufferAsync(clipText);
+            if (similarityBuf == null)
+            {
+                Debug.LogError("Failed to receive similarity scores in ProcessCLIPQuery.");
+                return;
+            }
+            Debug.Log("Successfully received similarity scores for \"" + clipText + "\" in ProcessCLIPQuery. length: " + similarityBuf.Length);
+
+            (float, float) minMax = await clipClient.RequestRelevancyExtremaAsync(clipText);
+            Debug.Log($"Received relevancy extrema: min={minMax.Item1}, max={minMax.Item2}");
+            m_MinRelevancyScore = minMax.Item1;
+            m_MaxRelevancyScore = minMax.Item2;
+
+            if (similarityBuf.Length != splatCount)
+            {
+                Debug.LogError($"Received similarity buffer length {similarityBuf.Length} does not match splat count {splatCount}.");
+                return;
+            }
+
+            // Copy it over to the GPU buffer for query similarities
+            m_GpuQuerySimilarities.SetData(similarityBuf);
         }
 
         public void EditSetSplatCount(int newSplatCount)

@@ -34,7 +34,10 @@ namespace GaussianSplatting.Editor
         SerializedProperty m_PropShaderComposite;
         SerializedProperty m_PropShaderDebugPoints;
         SerializedProperty m_PropShaderDebugBoxes;
+        SerializedProperty m_PropShaderOccamSimilarities;
         SerializedProperty m_PropCSSplatUtilities;
+
+        string editorCLIPQuery = "";
 
         bool m_ResourcesExpanded = false;
         int m_CameraIndex = 0;
@@ -74,6 +77,7 @@ namespace GaussianSplatting.Editor
             m_PropShaderComposite = serializedObject.FindProperty("m_ShaderComposite");
             m_PropShaderDebugPoints = serializedObject.FindProperty("m_ShaderDebugPoints");
             m_PropShaderDebugBoxes = serializedObject.FindProperty("m_ShaderDebugBoxes");
+            m_PropShaderOccamSimilarities = serializedObject.FindProperty("m_ShaderOccamSimilarities");
             m_PropCSSplatUtilities = serializedObject.FindProperty("m_CSSplatUtilities");
 
             s_AllEditors.Add(this);
@@ -126,6 +130,7 @@ namespace GaussianSplatting.Editor
                 EditorGUILayout.PropertyField(m_PropShaderComposite);
                 EditorGUILayout.PropertyField(m_PropShaderDebugPoints);
                 EditorGUILayout.PropertyField(m_PropShaderDebugBoxes);
+                EditorGUILayout.PropertyField(m_PropShaderOccamSimilarities);
                 EditorGUILayout.PropertyField(m_PropCSSplatUtilities);
             }
             bool validAndEnabled = gs && gs.enabled && gs.gameObject.activeInHierarchy && gs.HasValidAsset;
@@ -143,6 +148,13 @@ namespace GaussianSplatting.Editor
             if (validAndEnabled && targets.Length > 1)
             {
                 MultiEditGUI();
+            }
+
+            EditorGUILayout.Space();
+            editorCLIPQuery = EditorGUILayout.TextField("CLIP query", editorCLIPQuery);
+            if (GUILayout.Button("Process CLIP Query"))
+            {
+                gs.ProcessCLIPQuery(editorCLIPQuery);
             }
 
             serializedObject.ApplyModifiedProperties();
