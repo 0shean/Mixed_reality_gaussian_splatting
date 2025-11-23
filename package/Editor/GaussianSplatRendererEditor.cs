@@ -36,8 +36,6 @@ namespace GaussianSplatting.Editor
         SerializedProperty m_PropShaderDebugBoxes;
         SerializedProperty m_PropShaderOccamSimilarities;
         SerializedProperty m_PropCSSplatUtilities;
-        SerializedProperty m_PropCanonicalSimilarities;
-        SerializedProperty m_PropQuerySimilarities;
 
         string editorCLIPQuery = "";
 
@@ -81,8 +79,6 @@ namespace GaussianSplatting.Editor
             m_PropShaderDebugBoxes = serializedObject.FindProperty("m_ShaderDebugBoxes");
             m_PropShaderOccamSimilarities = serializedObject.FindProperty("m_ShaderOccamSimilarities");
             m_PropCSSplatUtilities = serializedObject.FindProperty("m_CSSplatUtilities");
-            m_PropCanonicalSimilarities = serializedObject.FindProperty("m_CanonicalSimilarities");
-            m_PropQuerySimilarities = serializedObject.FindProperty("m_QuerySimilarities");
 
             s_AllEditors.Add(this);
         }
@@ -153,10 +149,6 @@ namespace GaussianSplatting.Editor
             {
                 MultiEditGUI();
             }
-
-            EditorGUILayout.Space();
-            EditorGUILayout.PropertyField(m_PropCanonicalSimilarities);
-            EditorGUILayout.PropertyField(m_PropQuerySimilarities);
 
             EditorGUILayout.Space();
             editorCLIPQuery = EditorGUILayout.TextField("CLIP query", editorCLIPQuery);

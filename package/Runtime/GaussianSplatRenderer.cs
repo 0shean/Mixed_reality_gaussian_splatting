@@ -312,9 +312,9 @@ namespace GaussianSplatting.Runtime
         internal GraphicsBuffer m_GpuIndexBuffer;
 
         // Pointers to files containing similarity scores in buffers.
-        public TextAsset m_CanonicalSimilarities;
-        public TextAsset m_QuerySimilarities;
+        public const string m_canonicalEmbeddingStr = "object";
         internal GraphicsBuffer m_GpuCanonicalSimilarities;
+        private bool m_CanonicalSimilaritiesLoaded = false;
         internal GraphicsBuffer m_GpuQuerySimilarities;
 
         public float m_MaxRelevancyScore = 1.0f;
@@ -464,43 +464,20 @@ namespace GaussianSplatting.Runtime
                 m_GpuChunksValid = false;
             }
 
-            // If similarity data files are provided, load them into GPU buffers.
+            // Initialize empty similarity buffers :)
             m_GpuCanonicalSimilarities?.Dispose();
             m_GpuQuerySimilarities?.Dispose();
-            if (m_CanonicalSimilarities != null && m_CanonicalSimilarities.bytes.Length > 0)
+            m_GpuCanonicalSimilarities = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, sizeof(float))
             {
-                int count = m_CanonicalSimilarities.bytes.Length / sizeof(float);
-                m_GpuCanonicalSimilarities = new GraphicsBuffer(GraphicsBuffer.Target.Structured, count, sizeof(float))
-                {
-                    name = "GaussianCanonicalSimilarities"
-                };
-                m_GpuCanonicalSimilarities.SetData(m_CanonicalSimilarities.bytes);
-                // float[] canonicalSimilaritiesArray = new float[count];
-                // for (int i = 0; i < count; i++)
-                // {
-                //     canonicalSimilaritiesArray[i] = (float)i / (float)count;
-                // }
-                // m_GpuCanonicalSimilarities.SetData(canonicalSimilaritiesArray);
-                // Assert that count is the same as num splats.
-                if (count != m_SplatCount)
-                {
-                    Debug.LogWarning($"Canonical similarities count {count} does not match splat count {m_SplatCount}.");
-                }
-            }
-            if (m_QuerySimilarities != null && m_QuerySimilarities.bytes.Length > 0)
+                name = "GaussianCanonicalSimilarities"
+            };
+            // Set the bool false to indicate we should load it on our first query.
+            m_CanonicalSimilaritiesLoaded = false;
+
+            m_GpuQuerySimilarities = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_SplatCount, sizeof(float))
             {
-                int count = m_QuerySimilarities.bytes.Length / sizeof(float);
-                m_GpuQuerySimilarities = new GraphicsBuffer(GraphicsBuffer.Target.Structured, count, sizeof(float))
-                {
-                    name = "GaussianQuerySimilarities"
-                };
-                m_GpuQuerySimilarities.SetData(m_QuerySimilarities.bytes);
-                // Assert that count is the same as num splats.
-                if (count != m_SplatCount)
-                {
-                    Debug.LogWarning($"Query similarities count {count} does not match splat count {m_SplatCount}.");
-                }
-            }
+                name = "GaussianQuerySimilarities"
+            };
 
             m_GpuView = new GraphicsBuffer(GraphicsBuffer.Target.Structured, m_Asset.splatCount, kGpuViewDataSize);
             m_GpuIndexBuffer = new GraphicsBuffer(GraphicsBuffer.Target.Index, 36, 2);
@@ -1064,25 +1041,50 @@ namespace GaussianSplatting.Runtime
 
         public async Task ProcessCLIPQuery(string clipText)
         {
+            Debug.Log("Processing CLIP query: " + clipText);
             var clipClient = GetComponent<ClipClient>();
             if (clipClient == null)
             {
                 Debug.LogError("ClipClient component not found on this GameObject!");
                 return;
             }
-            // float[] embedding = await clipClient.RequestEmbeddingAsync(clipText);
+            if (!m_CanonicalSimilaritiesLoaded)
+            {
+                Debug.Log("Loading canonical similarities for the first time.");
+                float[] canonicalBuf = await clipClient.RequestSimilarityBufferAsync(m_canonicalEmbeddingStr);
+                if (canonicalBuf == null)
+                {
+                    Debug.LogError("Failed to receive canonical similarity scores in ProcessCLIPQuery.");
+                    return;
+                }
+                if (canonicalBuf.Length != splatCount)
+                {
+                    Debug.LogError($"Received canonical embedding buffer length {canonicalBuf.Length} does not match splat count {splatCount}.");
+                    return;
+                }
+                m_GpuCanonicalSimilarities.SetData(canonicalBuf);
+                m_CanonicalSimilaritiesLoaded = true;
+            }
+
+            // Let's change this to also initialize the canonical embedding.
             float[] similarityBuf = await clipClient.RequestSimilarityBufferAsync(clipText);
             if (similarityBuf == null)
             {
                 Debug.LogError("Failed to receive similarity scores in ProcessCLIPQuery.");
                 return;
             }
-            Debug.Log("Successfully received similarity scores in ProcessCLIPQuery. length: " + similarityBuf.Length);
+            Debug.Log("Successfully received similarity scores for \"" + clipText + "\" in ProcessCLIPQuery. length: " + similarityBuf.Length);
 
             (float, float) minMax = await clipClient.RequestRelevancyExtremaAsync(clipText);
             Debug.Log($"Received relevancy extrema: min={minMax.Item1}, max={minMax.Item2}");
             m_MinRelevancyScore = minMax.Item1;
             m_MaxRelevancyScore = minMax.Item2;
+
+            if (similarityBuf.Length != splatCount)
+            {
+                Debug.LogError($"Received similarity buffer length {similarityBuf.Length} does not match splat count {splatCount}.");
+                return;
+            }
 
             // Copy it over to the GPU buffer for query similarities
             m_GpuQuerySimilarities.SetData(similarityBuf);
