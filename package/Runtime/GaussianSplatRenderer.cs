@@ -170,24 +170,20 @@ namespace GaussianSplatting.Runtime
                 // Additional step for Occam similarities, compute the softmax of relevancy scores.
                 if (gs.m_RenderMode == GaussianSplatRenderer.RenderMode.OccamSimilarities)
                 {
-                    RenderTexture softmaxRT = new RenderTexture(
-                        cam.pixelWidth,
-                        cam.pixelHeight,
-                        0,
-                        GraphicsFormat.R16G16B16A16_SFloat
-                    );
-                    softmaxRT.enableRandomWrite = true;   // 🔥 IMPORTANT
-                    softmaxRT.useMipMap = false;
-                    softmaxRT.Create();
+                    int softmaxRTID = Shader.PropertyToID("_OccamSoftmaxRT");
+                    var rtDesc = new RenderTextureDescriptor(cam.pixelWidth, cam.pixelHeight, GraphicsFormat.R16G16B16A16_SFloat, 0);
+                    rtDesc.enableRandomWrite = true;
+                    rtDesc.useMipMap = false;
+                    m_CommandBuffer.GetTemporaryRT(softmaxRTID, rtDesc);
                     m_CommandBuffer.BeginSample("RelevancyScorePass");
 
                     ComputeShader cs = gs.m_CSSplatUtilities;
                     int kernel = cs.FindKernel("CSRelevancyScoreColoring");
 
-                    m_CommandBuffer.SetRenderTarget(softmaxRT);   // <-- This makes Frame Debugger list it
+                    m_CommandBuffer.SetRenderTarget(softmaxRTID);
 
                     m_CommandBuffer.SetComputeTextureParam(cs, kernel, "InputTex",  GaussianSplatRenderer.Props.GaussianSplatRT);
-                    m_CommandBuffer.SetComputeTextureParam(cs, kernel, "OutputTex", softmaxRT);
+                    m_CommandBuffer.SetComputeTextureParam(cs, kernel, "OutputTex", softmaxRTID);
 
                     // Add the compute max / min relevancy scores.
                     m_CommandBuffer.SetComputeFloatParam(cs, "_MaxRelevancyScore", gs.m_MaxRelevancyScore);
@@ -199,10 +195,9 @@ namespace GaussianSplatting.Runtime
                     m_CommandBuffer.DispatchCompute(cs, kernel, gx, gy, 1);
                     m_CommandBuffer.EndSample("RelevancyScorePass");
 
-                        // ⭐ NEW: blit softmax result directly to camera target
-                    m_CommandBuffer.Blit(softmaxRT, BuiltinRenderTextureType.CameraTarget);
+                    m_CommandBuffer.Blit(softmaxRTID, BuiltinRenderTextureType.CameraTarget);
 
-                    softmaxRT.Release();
+                    m_CommandBuffer.ReleaseTemporaryRT(softmaxRTID);
                 }
             }
             return matComposite;

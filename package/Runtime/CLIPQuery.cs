@@ -15,8 +15,12 @@ public class ClipClient : MonoBehaviour
     public async Task<float[]> RequestSimilarityBufferAsync(string text)
     {
         string json = "{\"text\":\"" + text + "\"}";
+        string fullUrl = serverUrl + "/similarity_binary";
 
-        using (var request = new UnityWebRequest(serverUrl + "/similarity_binary", "POST"))
+        Debug.Log($"[ClipClient] Attempting to connect to: {fullUrl}");
+        Debug.Log($"[ClipClient] Requesting similarity for: \"{text}\"");
+
+        using (var request = new UnityWebRequest(fullUrl, "POST"))
         {
             byte[] body = Encoding.UTF8.GetBytes(json);
             request.uploadHandler = new UploadHandlerRaw(body);
@@ -29,7 +33,10 @@ public class ClipClient : MonoBehaviour
 
             if (request.result != UnityWebRequest.Result.Success)
             {
-                Debug.LogError($"Binary request failed: {request.error}");
+                Debug.LogError($"[ClipClient] Binary request failed!");
+                Debug.LogError($"[ClipClient] URL was: {fullUrl}");
+                Debug.LogError($"[ClipClient] Error: {request.error}");
+                Debug.LogError($"[ClipClient] Response Code: {request.responseCode}");
                 return null;
             }
 
@@ -56,8 +63,11 @@ public class ClipClient : MonoBehaviour
     public async Task<(float min, float max)> RequestRelevancyExtremaAsync(string text)
     {
         string json = "{\"text\":\"" + text + "\"}";
+        string fullUrl = serverUrl + "/relevancy_extrema";
 
-        using (var request = new UnityWebRequest(serverUrl + "/relevancy_extrema", "POST"))
+        Debug.Log($"[ClipClient] Requesting extrema from: {fullUrl}");
+
+        using (var request = new UnityWebRequest(fullUrl, "POST"))
         {
             byte[] body = Encoding.UTF8.GetBytes(json);
             request.uploadHandler = new UploadHandlerRaw(body);
@@ -70,7 +80,9 @@ public class ClipClient : MonoBehaviour
 
             if (request.result != UnityWebRequest.Result.Success)
             {
-                Debug.LogError("Extrema request failed: " + request.error);
+                Debug.LogError($"[ClipClient] Extrema request failed!");
+                Debug.LogError($"[ClipClient] URL was: {fullUrl}");
+                Debug.LogError($"[ClipClient] Error: " + request.error);
                 return (0f, 0f);
             }
 

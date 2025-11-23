@@ -39,4 +39,7 @@ test_build_BurstDebugInformation_DoNotShip/
 
 # Python
 **/.venv/
+**/venv/
 .python-version
+*.ply
+mono_crash.*.json
