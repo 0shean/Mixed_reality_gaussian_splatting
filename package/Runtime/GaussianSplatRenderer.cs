@@ -130,6 +130,7 @@ namespace GaussianSplatting.Runtime
                     GaussianSplatRenderer.RenderMode.DebugPointIndices => gs.m_MatDebugPoints,
                     GaussianSplatRenderer.RenderMode.DebugBoxes => gs.m_MatDebugBoxes,
                     GaussianSplatRenderer.RenderMode.DebugChunkBounds => gs.m_MatDebugBoxes,
+                    GaussianSplatRenderer.RenderMode.OccamSimilarities => gs.m_MatOccamSimilarities,
                     _ => gs.m_MatSplats
                 };
                 if (displayMat == null)
@@ -166,8 +167,43 @@ namespace GaussianSplatting.Runtime
                 cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, displayMat, 0, topology, indexCount, instanceCount, mpb);
                 cmb.EndSample(s_ProfDraw);
 
-                // Now I want to do a step where I take the softmax over all pixels.
+                // Additional step for Occam similarities, compute the softmax of relevancy scores.
+                if (gs.m_RenderMode == GaussianSplatRenderer.RenderMode.OccamSimilarities)
+                {
+                    RenderTexture softmaxRT = new RenderTexture(
+                        cam.pixelWidth,
+                        cam.pixelHeight,
+                        0,
+                        GraphicsFormat.R16G16B16A16_SFloat
+                    );
+                    softmaxRT.enableRandomWrite = true;   // 🔥 IMPORTANT
+                    softmaxRT.useMipMap = false;
+                    softmaxRT.Create();
+                    m_CommandBuffer.BeginSample("RelevancyScorePass");
 
+                    ComputeShader cs = gs.m_CSSplatUtilities;
+                    int kernel = cs.FindKernel("CSRelevancyScoreColoring");
+
+                    m_CommandBuffer.SetRenderTarget(softmaxRT);   // <-- This makes Frame Debugger list it
+
+                    m_CommandBuffer.SetComputeTextureParam(cs, kernel, "InputTex",  GaussianSplatRenderer.Props.GaussianSplatRT);
+                    m_CommandBuffer.SetComputeTextureParam(cs, kernel, "OutputTex", softmaxRT);
+
+                    // Add the compute max / min relevancy scores.
+                    m_CommandBuffer.SetComputeFloatParam(cs, "_MaxRelevancyScore", gs.m_MaxRelevancyScore);
+                    m_CommandBuffer.SetComputeFloatParam(cs, "_MinRelevancyScore", gs.m_MinRelevancyScore);
+
+                    int gx = Mathf.CeilToInt(cam.pixelWidth  / 8f);
+                    int gy = Mathf.CeilToInt(cam.pixelHeight / 8f);
+
+                    m_CommandBuffer.DispatchCompute(cs, kernel, gx, gy, 1);
+                    m_CommandBuffer.EndSample("RelevancyScorePass");
+
+                        // ⭐ NEW: blit softmax result directly to camera target
+                    m_CommandBuffer.Blit(softmaxRT, BuiltinRenderTextureType.CameraTarget);
+
+                    softmaxRT.Release();
+                }
             }
             return matComposite;
         }
@@ -206,42 +242,18 @@ namespace GaussianSplatting.Runtime
             // add sorting, view calc and drawing commands for each splat object
             Material matComposite = SortAndRenderSplats(cam, m_CommandBuffer);
 
-            RenderTexture softmaxRT = new RenderTexture(
-                cam.pixelWidth,
-                cam.pixelHeight,
-                0,
-                GraphicsFormat.R16G16B16A16_SFloat
-            );
-            softmaxRT.enableRandomWrite = true;   // 🔥 IMPORTANT
-            softmaxRT.useMipMap = false;
-            softmaxRT.Create();
-            m_CommandBuffer.BeginSample("SoftmaxPass");
-
-            ComputeShader cs = m_ActiveSplats[0].Item1.m_CSSplatUtilities;
-            int kernel = cs.FindKernel("CSRedBlueSoftmax");
-
-            m_CommandBuffer.SetRenderTarget(softmaxRT);   // <-- This makes Frame Debugger list it
-
-            m_CommandBuffer.SetComputeTextureParam(cs, kernel, "InputTex",  GaussianSplatRenderer.Props.GaussianSplatRT);
-            m_CommandBuffer.SetComputeTextureParam(cs, kernel, "OutputTex", softmaxRT);
-
-            // Add the compute max / min relevancy scores.
-            m_CommandBuffer.SetComputeFloatParam(cs, "_MaxRelevancyScore", m_ActiveSplats[0].Item1.m_MaxRelevancyScore);
-            m_CommandBuffer.SetComputeFloatParam(cs, "_MinRelevancyScore", m_ActiveSplats[0].Item1.m_MinRelevancyScore);
-
-            int gx = Mathf.CeilToInt(cam.pixelWidth  / 8f);
-            int gy = Mathf.CeilToInt(cam.pixelHeight / 8f);
-
-            m_CommandBuffer.DispatchCompute(cs, kernel, gx, gy, 1);
-            m_CommandBuffer.EndSample("SoftmaxPass");
-
-            softmaxRT.Release();
-
-            // compose
-            m_CommandBuffer.BeginSample(s_ProfCompose);
-            m_CommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
-            m_CommandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
-            m_CommandBuffer.EndSample(s_ProfCompose);
+            // compose unless overridden by OccamSimilarities
+            if (matComposite != null && m_ActiveSplats[0].Item1.m_RenderMode != GaussianSplatRenderer.RenderMode.OccamSimilarities)
+            {
+                m_CommandBuffer.BeginSample(s_ProfCompose);
+                m_CommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
+                m_CommandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
+                m_CommandBuffer.EndSample(s_ProfCompose);
+            }
+            // m_CommandBuffer.BeginSample(s_ProfCompose);
+            // m_CommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
+            // m_CommandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
+            // m_CommandBuffer.EndSample(s_ProfCompose);
             m_CommandBuffer.ReleaseTemporaryRT(GaussianSplatRenderer.Props.GaussianSplatRT);
         }
     }
@@ -256,7 +268,7 @@ namespace GaussianSplatting.Runtime
             DebugPointIndices,
             DebugBoxes,
             DebugChunkBounds,
-            Similarities,
+            OccamSimilarities,
         }
         public GaussianSplatAsset m_Asset;
 
@@ -283,6 +295,7 @@ namespace GaussianSplatting.Runtime
         public Shader m_ShaderComposite;
         public Shader m_ShaderDebugPoints;
         public Shader m_ShaderDebugBoxes;
+        public Shader m_ShaderOccamSimilarities;
         [Tooltip("Gaussian splatting compute shader")]
         public ComputeShader m_CSSplatUtilities;
 
@@ -323,6 +336,7 @@ namespace GaussianSplatting.Runtime
         internal Material m_MatComposite;
         internal Material m_MatDebugPoints;
         internal Material m_MatDebugBoxes;
+        internal Material m_MatOccamSimilarities;
 
         internal int m_FrameCounter;
         GaussianSplatAsset m_PrevAsset;
@@ -529,7 +543,7 @@ namespace GaussianSplatting.Runtime
         }
 
         bool resourcesAreSetUp => m_ShaderSplats != null && m_ShaderComposite != null && m_ShaderDebugPoints != null &&
-                                  m_ShaderDebugBoxes != null && m_CSSplatUtilities != null && SystemInfo.supportsComputeShaders;
+                                  m_ShaderDebugBoxes != null && m_CSSplatUtilities != null && m_ShaderOccamSimilarities != null && SystemInfo.supportsComputeShaders;
 
         public void EnsureMaterials()
         {
@@ -539,6 +553,7 @@ namespace GaussianSplatting.Runtime
                 m_MatComposite = new Material(m_ShaderComposite) {name = "GaussianClearDstAlpha"};
                 m_MatDebugPoints = new Material(m_ShaderDebugPoints) {name = "GaussianDebugPoints"};
                 m_MatDebugBoxes = new Material(m_ShaderDebugBoxes) {name = "GaussianDebugBoxes"};
+                m_MatOccamSimilarities = new Material(m_ShaderOccamSimilarities) {name = "GaussianOccamSimilarities"};
             }
         }
 
@@ -663,6 +678,7 @@ namespace GaussianSplatting.Runtime
             DestroyImmediate(m_MatComposite);
             DestroyImmediate(m_MatDebugPoints);
             DestroyImmediate(m_MatDebugBoxes);
+            DestroyImmediate(m_MatOccamSimilarities);
         }
 
         internal void CalcViewData(CommandBuffer cmb, Camera cam)
