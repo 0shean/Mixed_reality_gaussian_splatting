@@ -39,6 +39,20 @@ class ServerState:
             self.occam_language_features, known_embeddings
         )
 
+        self.canonical_queries = [
+            "object",
+            "thing",
+            "texture",
+            "material"
+        ]
+        self.canonical_similarities = {}
+        for query in self.canonical_queries:
+            embedding = self.computer.clip_embedding(query)
+            similarity = self.computer.compute_similarities(
+                self.occam_language_features, embedding
+            )
+            self.canonical_similarities[query] = similarity
+
         print(
             "Canonical 'object' prompt similarities:",
             self.canonical_similarity.max(),
@@ -54,6 +68,22 @@ def get_state() -> ServerState:
     """
     return app.state.server_state
 
+
+def compute_relevancy_scores(text: str, state: ServerState) -> np.ndarray:
+    query_embedding = state.computer.clip_embedding(text)
+    similarity = state.computer.compute_similarities(
+        state.occam_language_features,
+        query_embedding
+    )
+
+    # Compute softmax with each canonical similarity
+    final_relevancy_score = np.ones(similarity.shape)  # to ensure shape consistency
+    for query in state.canonical_similarities:
+        canonical_similarity = state.canonical_similarities[query]
+        relevancy_score = np.exp(similarity) / (np.exp(similarity) + np.exp(canonical_similarity))
+        final_relevancy_score = np.minimum(final_relevancy_score, relevancy_score)
+
+    return final_relevancy_score
 
 # ---------------------
 # FastAPI setup
@@ -73,21 +103,20 @@ def relevancy_extrema(
 ):
     print("embedding text:", input.text)
 
-    query_embedding = state.computer.clip_embedding(input.text)
-    similarity = state.computer.compute_similarities(
-        state.occam_language_features, query_embedding
-    )
+    # query_embedding = state.computer.clip_embedding(input.text)
+    # similarity = state.computer.compute_similarities(
+    #     state.occam_language_features, query_embedding
+    # )
 
-    print(
-        "Query prompt similarities:",
-        similarity.max(),
-        similarity.min(),
-        similarity.mean(),
-    )
+    # print(
+    #     "Query prompt similarities:",
+    #     similarity.max(),
+    #     similarity.min(),
+    #     similarity.mean(),
+    # )
 
-    relevancy_score = np.exp(similarity) / (
-        np.exp(similarity) + np.exp(state.canonical_similarity)
-    )
+    relevancy_score = compute_relevancy_scores(input.text, state)
+
     min_relevancy = float(np.min(relevancy_score))
     max_relevancy = float(np.max(relevancy_score))
 
@@ -119,6 +148,32 @@ def similarity_binary(
         stream,
         media_type="application/octet-stream"
     )
+
+@app.post("/relevancy_score_binary")
+def relevancy_score_binary(
+    input: TextInput,
+    state: ServerState = Depends(get_state)
+):
+    print("embedding text:", input.text)
+
+    relevancy_score = compute_relevancy_scores(input.text, state)
+
+    min_relevancy = float(np.min(relevancy_score))
+    max_relevancy = float(np.max(relevancy_score))
+
+    # normalized_relevancy = (relevancy_score - min_relevancy) / (max_relevancy - min_relevancy + 1e-8)
+
+    # Ensure float32 to minimize size
+    buf = relevancy_score.astype(np.float32).tobytes()
+
+    # Wrap in a stream
+    stream = io.BytesIO(buf)
+
+    return StreamingResponse(
+        stream,
+        media_type="application/octet-stream"
+    )
+
 
 
 # ---------------------
