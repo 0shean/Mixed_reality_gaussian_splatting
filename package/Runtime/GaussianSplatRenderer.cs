@@ -586,7 +586,7 @@ namespace GaussianSplatting.Runtime
             mat.SetBuffer(Props.SplatOther, m_GpuOtherData);
             mat.SetBuffer(Props.SplatSH, m_GpuSHData);
             mat.SetBuffer(Shader.PropertyToID("_SplatQuerySimilarities"), m_GpuQuerySimilarities);
-            mat.SetBuffer(Shader.PropertyToID("_SplatCanonicalSimilarities"), m_GpuCanonicalSimilarities);
+            // mat.SetBuffer(Shader.PropertyToID("_SplatCanonicalSimilarities"), m_GpuCanonicalSimilarities);
             mat.SetTexture(Props.SplatColor, m_GpuColorData);
             mat.SetBuffer(Props.SplatSelectedBits, m_GpuEditSelected ?? m_GpuPosData);
             mat.SetBuffer(Props.SplatDeletedBits, m_GpuEditDeleted ?? m_GpuPosData);
@@ -1043,26 +1043,26 @@ namespace GaussianSplatting.Runtime
                 Debug.LogError("ClipClient component not found on this GameObject!");
                 return;
             }
-            if (!m_CanonicalSimilaritiesLoaded)
-            {
-                Debug.Log("Loading canonical similarities for the first time.");
-                float[] canonicalBuf = await clipClient.RequestSimilarityBufferAsync(m_canonicalEmbeddingStr);
-                if (canonicalBuf == null)
-                {
-                    Debug.LogError("Failed to receive canonical similarity scores in ProcessCLIPQuery.");
-                    return;
-                }
-                if (canonicalBuf.Length != splatCount)
-                {
-                    Debug.LogError($"Received canonical embedding buffer length {canonicalBuf.Length} does not match splat count {splatCount}.");
-                    return;
-                }
-                m_GpuCanonicalSimilarities.SetData(canonicalBuf);
-                m_CanonicalSimilaritiesLoaded = true;
-            }
+            // if (!m_CanonicalSimilaritiesLoaded)
+            // {
+            //     Debug.Log("Loading canonical similarities for the first time.");
+            //     float[] canonicalBuf = await clipClient.RequestRelevancyScoreBufAsync(m_canonicalEmbeddingStr);
+            //     if (canonicalBuf == null)
+            //     {
+            //         Debug.LogError("Failed to receive canonical similarity scores in ProcessCLIPQuery.");
+            //         return;
+            //     }
+            //     if (canonicalBuf.Length != splatCount)
+            //     {
+            //         Debug.LogError($"Received canonical embedding buffer length {canonicalBuf.Length} does not match splat count {splatCount}.");
+            //         return;
+            //     }
+            //     m_GpuCanonicalSimilarities.SetData(canonicalBuf);
+            //     m_CanonicalSimilaritiesLoaded = true;
+            // }
 
             // Let's change this to also initialize the canonical embedding.
-            float[] similarityBuf = await clipClient.RequestSimilarityBufferAsync(clipText);
+            float[] similarityBuf = await clipClient.RequestRelevancyScoreBufAsync(clipText);
             if (similarityBuf == null)
             {
                 Debug.LogError("Failed to receive similarity scores in ProcessCLIPQuery.");

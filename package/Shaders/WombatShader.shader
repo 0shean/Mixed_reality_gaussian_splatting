@@ -32,7 +32,7 @@ StructuredBuffer<SplatViewData> _SplatViewData;
 ByteAddressBuffer _SplatSelectedBits;
 uint _SplatBitsValid;
 StructuredBuffer<float> _SplatQuerySimilarities;
-StructuredBuffer<float> _SplatCanonicalSimilarities;
+// StructuredBuffer<float> _SplatCanonicalSimilarities;
 
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 {
@@ -54,8 +54,8 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 		float brightness = 0.2126 * R + 0.7152 * G + 0.0722 * B;
 
 		o.col.r = _SplatQuerySimilarities[instID];
-		o.col.g = brightness;     // black & white intensity
-		o.col.b = _SplatCanonicalSimilarities[instID];
+		o.col.g = brightness;
+		o.col.b = 0;
 		o.col.a = f16tof32(view.color.y);
 
 		uint idx = vtxID;

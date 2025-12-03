@@ -12,10 +12,10 @@ public class ClipClient : MonoBehaviour
 
     public string textInput = "a photo of a wombat";
 
-    public async Task<float[]> RequestSimilarityBufferAsync(string text)
+    public async Task<float[]> RequestRelevancyScoreBufAsync(string text)
     {
         string json = "{\"text\":\"" + text + "\"}";
-        string fullUrl = serverUrl + "/similarity_binary";
+        string fullUrl = serverUrl + "/relevancy_score_binary";
 
         Debug.Log($"[ClipClient] Attempting to connect to: {fullUrl}");
         Debug.Log($"[ClipClient] Requesting similarity for: \"{text}\"");
@@ -103,7 +103,7 @@ public class ClipClient : MonoBehaviour
     [ContextMenu("Request Similarity Scores")]
     private async void RequestSimilarityFromInspector()
     {
-        float[] similarityBuf = await RequestSimilarityBufferAsync(textInput);
+        float[] similarityBuf = await RequestRelevancyScoreBufAsync(textInput);
         if (similarityBuf != null)
             Debug.Log("Successfully received similarity scores for embedding, length: " + similarityBuf.Length);
     }

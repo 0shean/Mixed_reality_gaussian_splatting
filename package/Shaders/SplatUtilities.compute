@@ -790,20 +790,10 @@ void CSRelevancyScoreColoring(uint3 id : SV_DispatchThreadID)
 
     float4 c = InputTex[uv];
 
-    float queryBlended = c.r;  // The r channel contains the query value.
-    float canonicalBlended = c.b;  // Canonical embedding.
-
-    // Numeric stabilization
-    float m = max(queryBlended, canonicalBlended);
-    float ea = exp(queryBlended - m);
-    float eb = exp(canonicalBlended - m);
-
-    float denom = ea + eb;
-    float rawScore = ea / denom;
-
+    float rawScore = c.r;  // The r channel contains the blended normalized relevancy scores.
     if (rawScore <= 0.5) {
         // Below 0.5, not closer to the query than the generic query.
-        // Use the alpha blended brightness value to make it black / white.
+        // Unpack the values from the g and b channels for color output.
         OutputTex[uv] = float4(c.g, c.g, c.g, 1);
         return;
     }
