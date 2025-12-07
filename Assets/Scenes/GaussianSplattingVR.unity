@@ -2867,6 +2867,56 @@ MonoBehaviour:
   m_VerticalAxis: Vertical
   m_SubmitButton: Submit
   m_CancelButton: Cancel
+--- !u!1 &782628375
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 782628377}
+  - component: {fileID: 782628376}
+  m_Layer: 0
+  m_Name: VoiceInputController
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &782628376
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 782628375}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c7c877ab90add44f3b022e918639ba7b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  splatRenderer: {fileID: 0}
+  listeningIndicator: {fileID: 0}
+  indicatorDistance: 1.5
+  indicatorHeightOffset: 0.2
+  isListening: 0
+  lastRecognizedText: 
+--- !u!4 &782628377
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 782628375}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 9.424759, y: 1.357857, z: -1.89606}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &848022920
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -5059,6 +5109,8 @@ MonoBehaviour:
   inputCanvas: {fileID: 575263985}
   queryInputField: {fileID: 1080337310}
   sendQueryButton: {fileID: 1880944542}
+  panelDistance: 2
+  panelHeightOffset: -0.3
   currentQuery: chair
   isUIVisible: 0
 --- !u!114 &1630543849
@@ -6568,3 +6620,4 @@ SceneRoots:
   - {fileID: 1630543847}
   - {fileID: 575263989}
   - {fileID: 765077757}
+  - {fileID: 782628377}

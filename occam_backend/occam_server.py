@@ -1,14 +1,26 @@
 # Server
 # 1. Gets a request with CLIP text
 # 2. Computes the relevancy scores.
+# 3. Speech-to-text using Whisper
 
 import argparse
 import numpy as np
-from fastapi import FastAPI, Depends
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, Depends, File, UploadFile
+from fastapi.responses import StreamingResponse, JSONResponse
 import io
+import tempfile
+import os
 from pydantic import BaseModel
 import uvicorn
+
+# Try to import whisper for speech-to-text
+try:
+    import whisper
+    WHISPER_AVAILABLE = True
+    print("Whisper loaded successfully")
+except ImportError:
+    WHISPER_AVAILABLE = False
+    print("Whisper not available. Install with: pip install openai-whisper")
 
 from occam_compute_scores import (
     OccamScoreComputer,
@@ -24,6 +36,7 @@ class ServerState:
     - CLIP computer
     - Canonical similarities
     - Language features from the PLY file
+    - Whisper model for speech-to-text
     """
 
     def __init__(self, ply_path: str):
@@ -59,6 +72,18 @@ class ServerState:
             self.canonical_similarity.min(),
             self.canonical_similarity.mean(),
         )
+
+        # Initialize Whisper model for speech-to-text
+        self.whisper_model = None
+        if WHISPER_AVAILABLE:
+            try:
+                print("Loading Whisper model (base)...")
+                self.whisper_model = whisper.load_model("base")
+                print("Whisper model loaded successfully!")
+            except Exception as e:
+                print(f"Failed to load Whisper model: {e}")
+        else:
+            print("Whisper not available for speech-to-text")
 
 
 def get_state() -> ServerState:
@@ -174,6 +199,56 @@ def relevancy_score_binary(
         media_type="application/octet-stream"
     )
 
+
+@app.post("/speech_to_text")
+async def speech_to_text(
+    audio: UploadFile = File(...),
+    state: ServerState = Depends(get_state)
+):
+    """
+    Receive audio file and transcribe using Whisper.
+    Returns JSON with transcribed text.
+    """
+    print(f"Received audio file: {audio.filename}, content_type: {audio.content_type}")
+
+    if state.whisper_model is None:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "Whisper model not available", "text": ""}
+        )
+
+    try:
+        # Read audio data
+        audio_data = await audio.read()
+        print(f"Audio data size: {len(audio_data)} bytes")
+
+        # Save to temporary file (Whisper needs a file path)
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
+            tmp_file.write(audio_data)
+            tmp_path = tmp_file.name
+
+        print(f"Saved audio to: {tmp_path}")
+
+        # Transcribe with Whisper
+        print("Transcribing with Whisper...")
+        result = state.whisper_model.transcribe(tmp_path, language="en")
+        transcribed_text = result["text"].strip()
+
+        print(f"Transcribed text: '{transcribed_text}'")
+
+        # Clean up temp file
+        os.unlink(tmp_path)
+
+        return {"text": transcribed_text, "error": ""}
+
+    except Exception as e:
+        print(f"Speech-to-text error: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e), "text": ""}
+        )
 
 
 # ---------------------
