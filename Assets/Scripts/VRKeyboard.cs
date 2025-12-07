@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using TMPro;
 using System;
 
@@ -15,14 +16,14 @@ public class VRKeyboard : MonoBehaviour
     public GameObject keyButtonPrefab;
 
     [Header("Layout Settings")]
-    public float keyWidth = 100f;
-    public float keyHeight = 100f;
-    public float keySpacing = 10f;
-    public float rowSpacing = 10f;
+    public float keyWidth = 112f;
+    public float keyHeight = 112f;
+    public float keySpacing = 28f;
+    public float rowSpacing = 35f;
 
     [Header("Colors")]
-    public Color normalKeyColor = new Color(0.2f, 0.2f, 0.2f, 1f);
-    public Color specialKeyColor = new Color(0.3f, 0.3f, 0.5f, 1f);
+    public Color normalKeyColor = new Color(0.9f, 0.9f, 0.9f, 1f);  // Light gray
+    public Color specialKeyColor = new Color(0.7f, 0.75f, 0.85f, 1f);  // Light blue-gray
 
     private string[] keyboardRows = new string[]
     {
@@ -33,6 +34,8 @@ public class VRKeyboard : MonoBehaviour
     };
 
     private bool isUpperCase = false;
+    private float lastKeyPressTime = 0f;
+    private const float KEY_COOLDOWN = 0.3f;  // 300ms cooldown between key presses
 
     void Start()
     {
@@ -77,8 +80,8 @@ public class VRKeyboard : MonoBehaviour
 
         // Done row
         float doneRowY = specialRowY - (keyHeight + rowSpacing);
-        CreateKey("CLEAR", new Vector2(-150, doneRowY), keyWidth * 2f, specialKeyColor);
-        CreateKey("DONE", new Vector2(150, doneRowY), keyWidth * 2f, new Color(0.2f, 0.5f, 0.2f, 1f));
+        CreateKey("CLEAR", new Vector2(-150, doneRowY), keyWidth * 2f, new Color(0.95f, 0.7f, 0.7f, 1f));  // Light red
+        CreateKey("DONE", new Vector2(150, doneRowY), keyWidth * 2f, new Color(0.7f, 0.9f, 0.7f, 1f));  // Light green
     }
 
     void CreateKey(string keyLabel, Vector2 position, float width, Color color)
@@ -102,13 +105,19 @@ public class VRKeyboard : MonoBehaviour
         if (text != null)
         {
             text.text = keyLabel;
-            text.fontSize = keyLabel.Length > 1 ? 24 : 36;
+            text.fontSize = keyLabel.Length > 1 ? 34 : 50;  // 40% larger font
+            text.color = new Color(0.1f, 0.1f, 0.1f, 1f);  // Dark text for readability
         }
 
         // Add click listener
         Button btn = keyObj.GetComponent<Button>();
         if (btn != null)
         {
+            // Disable navigation to prevent accidental key presses
+            Navigation nav = btn.navigation;
+            nav.mode = Navigation.Mode.None;
+            btn.navigation = nav;
+
             string capturedKey = keyLabel;
             btn.onClick.AddListener(() => OnKeyPressed(capturedKey));
         }
@@ -116,6 +125,22 @@ public class VRKeyboard : MonoBehaviour
 
     public void OnKeyPressed(string key)
     {
+        // Cooldown to prevent double presses
+        if (Time.time - lastKeyPressTime < KEY_COOLDOWN)
+        {
+            Debug.Log($"VRKeyboard: Ignoring key '{key}' - too fast (cooldown)");
+            return;
+        }
+        lastKeyPressTime = Time.time;
+
+        Debug.Log($"VRKeyboard: Key pressed: '{key}' at {Time.time}");
+
+        // Clear selection to prevent "stuck" button state
+        if (EventSystem.current != null)
+        {
+            EventSystem.current.SetSelectedGameObject(null);
+        }
+
         if (targetInputField == null)
         {
             Debug.LogError("VRKeyboard: No target input field!");
