@@ -163,9 +163,80 @@ namespace GaussianSplatting.Runtime
                 if (gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds)
                     instanceCount = gs.m_GpuChunksValid ? gs.m_GpuChunks.count : 0;
 
-                cmb.BeginSample(s_ProfDraw);
-                cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, displayMat, 0, topology, indexCount, instanceCount, mpb);
-                cmb.EndSample(s_ProfDraw);
+                if (gs.m_RenderMode == GaussianSplatRenderer.RenderMode.OccamColoredSimilarities)
+                {
+                    // 1. Draw Base Splats to GaussianSplatRT (The background layer)
+                    var baseMat = gs.m_MatSplats;
+                    if (baseMat != null)
+                    {
+                        m_CommandBuffer.SetRenderTarget(GaussianSplatRenderer.Props.GaussianSplatRT, cam.targetTexture);
+                        // ... draw base splats ...
+                        cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, baseMat, 0, topology, indexCount, instanceCount, mpb);
+                        cmb.EndSample(s_ProfDraw);
+                    }
+
+                    // --- Mask/Overlay Passes ---
+                    var occamMat = gs.m_MatOccamSimilarities;
+                    if (occamMat != null)
+                    {
+                        // Define temporary RTs
+                        int occamRT = Shader.PropertyToID("_OccamTempRT");
+                        int csOutputRT = Shader.PropertyToID("_CSOutputRT"); // NEW RT
+
+                        var rtDesc = new RenderTextureDescriptor(cam.pixelWidth, cam.pixelHeight, GraphicsFormat.R16G16B16A16_SFloat, 0);
+                        rtDesc.enableRandomWrite = true; // Still required for CS output
+                        rtDesc.useMipMap = false;
+
+                        m_CommandBuffer.GetTemporaryRT(occamRT, rtDesc);
+                        m_CommandBuffer.GetTemporaryRT(csOutputRT, rtDesc); // Allocate NEW RT
+                        
+                        // A. Draw Occam Splats (Mask data) to occamRT
+                        m_CommandBuffer.SetRenderTarget(occamRT);
+                        m_CommandBuffer.ClearRenderTarget(true, true, Color.clear);
+                        
+                        cmb.BeginSample("OccamColoredOverlay");
+                        cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, occamMat, 0, topology, indexCount, instanceCount, mpb);
+                        cmb.EndSample("OccamColoredOverlay");
+
+                        ComputeShader cs = gs.m_CSSplatUtilities;
+                        int kernel = cs.FindKernel("CSRelevancyScoreColoring");
+
+                        // Set the output for the compute shader to the *new* temporary RT
+                        m_CommandBuffer.SetComputeTextureParam(cs, kernel, "InputTex", occamRT);      // Read the raw mask splats
+                        m_CommandBuffer.SetComputeTextureParam(cs, kernel, "OutputTex", csOutputRT);  // Write the colorized mask
+
+                        int gx = Mathf.CeilToInt(cam.pixelWidth  / 8f);
+                        int gy = Mathf.CeilToInt(cam.pixelHeight / 8f);
+
+                        m_CommandBuffer.DispatchCompute(cs, kernel, gx, gy, 1);
+                        m_CommandBuffer.EndSample("RelevancyScorePass");
+
+                        // 3. Composite Pass
+                        if (gs.m_MatOccamComposite != null)
+                        {
+                            // Set the base splat RT as _BaseTex
+                            m_CommandBuffer.SetGlobalTexture("_MainTex", csOutputRT); 
+                            m_CommandBuffer.SetGlobalTexture("_BaseTex", GaussianSplatRenderer.Props.GaussianSplatRT);
+                            
+                            // Blit the *COMPUTE SHADER OUTPUT* to CameraTarget, using the composite shader
+                            m_CommandBuffer.Blit(csOutputRT, BuiltinRenderTextureType.CameraTarget, gs.m_MatOccamComposite);
+                        }
+                        else
+                        {
+                            // fallback: blit the CS output directly (shows only the mask)
+                            m_CommandBuffer.Blit(csOutputRT, BuiltinRenderTextureType.CameraTarget);
+                        }
+
+                        m_CommandBuffer.ReleaseTemporaryRT(occamRT);
+                        m_CommandBuffer.ReleaseTemporaryRT(csOutputRT); // Release NEW RT
+                    }
+                }
+                else
+                {
+                    cmb.BeginSample(s_ProfDraw);
+                    cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, displayMat, 0, topology, indexCount, instanceCount, mpb);
+                    cmb.EndSample(s_ProfDraw);
+                }
 
                 // Additional step for Occam similarities, compute the softmax of relevancy scores.
                 if (gs.m_RenderMode == GaussianSplatRenderer.RenderMode.OccamSimilarities)
@@ -238,7 +309,7 @@ namespace GaussianSplatting.Runtime
             Material matComposite = SortAndRenderSplats(cam, m_CommandBuffer);
 
             // compose unless overridden by OccamSimilarities
-            if (matComposite != null && m_ActiveSplats[0].Item1.m_RenderMode != GaussianSplatRenderer.RenderMode.OccamSimilarities)
+            if (matComposite != null && m_ActiveSplats[0].Item1.m_RenderMode != GaussianSplatRenderer.RenderMode.OccamSimilarities && m_ActiveSplats[0].Item1.m_RenderMode != GaussianSplatRenderer.RenderMode.OccamColoredSimilarities)
             {
                 m_CommandBuffer.BeginSample(s_ProfCompose);
                 m_CommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
@@ -264,6 +335,7 @@ namespace GaussianSplatting.Runtime
             DebugBoxes,
             DebugChunkBounds,
             OccamSimilarities,
+            OccamColoredSimilarities,
         }
         public GaussianSplatAsset m_Asset;
 
@@ -288,6 +360,8 @@ namespace GaussianSplatting.Runtime
 
         public Shader m_ShaderSplats;
         public Shader m_ShaderComposite;
+        // New composite shader to opaque-overlay occam results over splats
+        public Shader m_ShaderOccamComposite;
         public Shader m_ShaderDebugPoints;
         public Shader m_ShaderDebugBoxes;
         public Shader m_ShaderOccamSimilarities;
@@ -329,6 +403,7 @@ namespace GaussianSplatting.Runtime
 
         internal Material m_MatSplats;
         internal Material m_MatComposite;
+        internal Material m_MatOccamComposite;
         internal Material m_MatDebugPoints;
         internal Material m_MatDebugBoxes;
         internal Material m_MatOccamSimilarities;
@@ -515,7 +590,8 @@ namespace GaussianSplatting.Runtime
         }
 
         bool resourcesAreSetUp => m_ShaderSplats != null && m_ShaderComposite != null && m_ShaderDebugPoints != null &&
-                                  m_ShaderDebugBoxes != null && m_CSSplatUtilities != null && m_ShaderOccamSimilarities != null && SystemInfo.supportsComputeShaders;
+                                  m_ShaderDebugBoxes != null && m_CSSplatUtilities != null && m_ShaderOccamSimilarities != null &&
+                                  m_ShaderOccamComposite != null && SystemInfo.supportsComputeShaders;
 
         public void EnsureMaterials()
         {
@@ -523,6 +599,7 @@ namespace GaussianSplatting.Runtime
             {
                 m_MatSplats = new Material(m_ShaderSplats) {name = "GaussianSplats"};
                 m_MatComposite = new Material(m_ShaderComposite) {name = "GaussianClearDstAlpha"};
+                m_MatOccamComposite = new Material(m_ShaderOccamComposite) { name = "GaussianOccamComposite" };
                 m_MatDebugPoints = new Material(m_ShaderDebugPoints) {name = "GaussianDebugPoints"};
                 m_MatDebugBoxes = new Material(m_ShaderDebugBoxes) {name = "GaussianDebugBoxes"};
                 m_MatOccamSimilarities = new Material(m_ShaderOccamSimilarities) {name = "GaussianOccamSimilarities"};
@@ -651,6 +728,7 @@ namespace GaussianSplatting.Runtime
             DestroyImmediate(m_MatDebugPoints);
             DestroyImmediate(m_MatDebugBoxes);
             DestroyImmediate(m_MatOccamSimilarities);
+            DestroyImmediate(m_MatOccamComposite);
         }
 
         internal void CalcViewData(CommandBuffer cmb, Camera cam)
