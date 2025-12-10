@@ -32,7 +32,7 @@ StructuredBuffer<SplatViewData> _SplatViewData;
 ByteAddressBuffer _SplatSelectedBits;
 uint _SplatBitsValid;
 StructuredBuffer<float> _SplatQuerySimilarities;
-// StructuredBuffer<float> _SplatCanonicalSimilarities;
+float _SplatNearPlaneCutoff;
 
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 {
@@ -41,7 +41,9 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 	SplatViewData view = _SplatViewData[instID];
 	float4 centerClipPos = view.pos;
 	bool behindCam = centerClipPos.w <= 0;
-	if (behindCam)
+	// Also, discard if it's too close to the camera.
+	bool tooClose = centerClipPos.w < _SplatNearPlaneCutoff;
+	if (behindCam || tooClose)
 	{
 		o.vertex = asfloat(0x7fc00000); // NaN discards the primitive
 	}

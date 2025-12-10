@@ -10,7 +10,7 @@ Shader "Gaussian Splatting/Render Splats"
             ZWrite Off
             Blend OneMinusDstAlpha One
             Cull Off
-            
+
 CGPROGRAM
 #pragma vertex vert
 #pragma fragment frag
@@ -31,6 +31,7 @@ struct v2f
 StructuredBuffer<SplatViewData> _SplatViewData;
 ByteAddressBuffer _SplatSelectedBits;
 uint _SplatBitsValid;
+float _SplatNearPlaneCutoff;
 
 v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 {
@@ -39,7 +40,9 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 	SplatViewData view = _SplatViewData[instID];
 	float4 centerClipPos = view.pos;
 	bool behindCam = centerClipPos.w <= 0;
-	if (behindCam)
+	// Also, discard if it's too close to the camera.
+	bool tooClose = centerClipPos.w < _SplatNearPlaneCutoff;
+	if (behindCam || tooClose)
 	{
 		o.vertex = asfloat(0x7fc00000); // NaN discards the primitive
 	}
@@ -68,7 +71,7 @@ v2f vert (uint vtxID : SV_VertexID, uint instID : SV_InstanceID)
 			uint selVal = _SplatSelectedBits.Load(wordIdx * 4);
 			if (selVal & (1 << bitIdx))
 			{
-				o.col.a = -1;				
+				o.col.a = -1;
 			}
 		}
 	}
@@ -99,7 +102,7 @@ half4 frag (v2f i) : SV_Target
 		}
 		i.col.rgb = lerp(i.col.rgb, selectedColor, 0.5);
 	}
-	
+
     if (alpha < 1.0/255.0)
         discard;
 
