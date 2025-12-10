@@ -172,6 +172,7 @@ namespace GaussianSplatting.Runtime
                     {
                         m_CommandBuffer.SetRenderTarget(GaussianSplatRenderer.Props.GaussianSplatRT, cam.targetTexture);
                         // ... draw base splats ...
+                        cmb.BeginSample(s_ProfDraw);
                         cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, baseMat, 0, topology, indexCount, instanceCount, mpb);
                         cmb.EndSample(s_ProfDraw);
                     }
@@ -190,11 +191,11 @@ namespace GaussianSplatting.Runtime
 
                         m_CommandBuffer.GetTemporaryRT(occamRT, rtDesc);
                         m_CommandBuffer.GetTemporaryRT(csOutputRT, rtDesc); // Allocate NEW RT
-                        
+
                         // A. Draw Occam Splats (Mask data) to occamRT
                         m_CommandBuffer.SetRenderTarget(occamRT);
                         m_CommandBuffer.ClearRenderTarget(true, true, Color.clear);
-                        
+
                         cmb.BeginSample("OccamColoredOverlay");
                         cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, occamMat, 0, topology, indexCount, instanceCount, mpb);
                         cmb.EndSample("OccamColoredOverlay");
@@ -208,7 +209,7 @@ namespace GaussianSplatting.Runtime
 
                         int gx = Mathf.CeilToInt(cam.pixelWidth  / 8f);
                         int gy = Mathf.CeilToInt(cam.pixelHeight / 8f);
-
+                        m_CommandBuffer.BeginSample("RelevancyScorePass");
                         m_CommandBuffer.DispatchCompute(cs, kernel, gx, gy, 1);
                         m_CommandBuffer.EndSample("RelevancyScorePass");
 
@@ -216,9 +217,9 @@ namespace GaussianSplatting.Runtime
                         if (gs.m_MatOccamComposite != null)
                         {
                             // Set the base splat RT as _BaseTex
-                            m_CommandBuffer.SetGlobalTexture("_MainTex", csOutputRT); 
+                            m_CommandBuffer.SetGlobalTexture("_MainTex", csOutputRT);
                             m_CommandBuffer.SetGlobalTexture("_BaseTex", GaussianSplatRenderer.Props.GaussianSplatRT);
-                            
+
                             // Blit the *COMPUTE SHADER OUTPUT* to CameraTarget, using the composite shader
                             m_CommandBuffer.Blit(csOutputRT, BuiltinRenderTextureType.CameraTarget, gs.m_MatOccamComposite);
                         }
