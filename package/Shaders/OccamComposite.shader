@@ -52,10 +52,15 @@ half4 frag (v2f i) : SV_Target
     
     // --- WORKAROUND START ---
     
-    half mask_brightness = dot(occam_color, half3(0.3, 0.59, 0.11)); // Quick luminance check
-    
-    // Use the brightness as the alpha blend factor. Clamp it to 0-1.
-    half mask_blending_factor = saturate(mask_brightness); 
+    // Simple black/white=0, colored=1 classifier
+    half luminance = dot(occam_color, half3(0.299, 0.587, 0.114));
+
+    // Saturation = max channel - min channel (0 for gray/black/white, 1 for pure color)
+    half max_channel = max(max(occam_color.r, occam_color.g), occam_color.b);
+    half min_channel = min(min(occam_color.r, occam_color.g), occam_color.b);
+    half saturation = saturate((max_channel - min_channel) / max(luminance, 0.001));  // Avoid div0
+
+    half mask_blending_factor = step(0.3, saturation);  // Colored = 1, gray/black/white = 0
 
     // --- WORKAROUND END ---
 
