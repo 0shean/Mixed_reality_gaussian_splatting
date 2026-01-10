@@ -168,70 +168,56 @@ namespace GaussianSplatting.Runtime
                 {
                     // 1. Draw Base Splats to GaussianSplatRT (The background layer)
                     var baseMat = gs.m_MatSplats;
-                    if (baseMat != null)
-                    {
-                        m_CommandBuffer.SetRenderTarget(GaussianSplatRenderer.Props.GaussianSplatRT, cam.targetTexture);
-                        // ... draw base splats ...
-                        cmb.BeginSample(s_ProfDraw);
-                        cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, baseMat, 0, topology, indexCount, instanceCount, mpb);
-                        cmb.EndSample(s_ProfDraw);
-                    }
+                    m_CommandBuffer.SetRenderTarget(GaussianSplatRenderer.Props.GaussianSplatRT, cam.targetTexture);
+                    // ... draw base splats ...
+                    cmb.BeginSample(s_ProfDraw);
+                    cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, baseMat, 0, topology, indexCount, instanceCount, mpb);
+                    cmb.EndSample(s_ProfDraw);
 
                     // --- Mask/Overlay Passes ---
                     var occamMat = gs.m_MatOccamSimilarities;
-                    if (occamMat != null)
-                    {
-                        // Define temporary RTs
-                        int occamRT = Shader.PropertyToID("_OccamTempRT");
-                        int csOutputRT = Shader.PropertyToID("_CSOutputRT"); // NEW RT
 
-                        var rtDesc = new RenderTextureDescriptor(cam.pixelWidth, cam.pixelHeight, GraphicsFormat.R16G16B16A16_SFloat, 0);
-                        rtDesc.enableRandomWrite = true; // Still required for CS output
-                        rtDesc.useMipMap = false;
+                    // Define temporary RTs
+                    int occamRT = Shader.PropertyToID("_OccamTempRT");
+                    int csOutputRT = Shader.PropertyToID("_CSOutputRT"); // NEW RT
 
-                        m_CommandBuffer.GetTemporaryRT(occamRT, rtDesc);
-                        m_CommandBuffer.GetTemporaryRT(csOutputRT, rtDesc); // Allocate NEW RT
+                    var rtDesc = new RenderTextureDescriptor(cam.pixelWidth, cam.pixelHeight, GraphicsFormat.R16G16B16A16_SFloat, 0);
+                    rtDesc.enableRandomWrite = true; // Still required for CS output
+                    rtDesc.useMipMap = false;
 
-                        // A. Draw Occam Splats (Mask data) to occamRT
-                        m_CommandBuffer.SetRenderTarget(occamRT);
-                        m_CommandBuffer.ClearRenderTarget(true, true, Color.clear);
+                    m_CommandBuffer.GetTemporaryRT(occamRT, rtDesc);
+                    m_CommandBuffer.GetTemporaryRT(csOutputRT, rtDesc); // Allocate NEW RT
 
-                        cmb.BeginSample("OccamColoredOverlay");
-                        cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, occamMat, 0, topology, indexCount, instanceCount, mpb);
-                        cmb.EndSample("OccamColoredOverlay");
+                    // A. Draw Occam Splats (Mask data) to occamRT
+                    m_CommandBuffer.SetRenderTarget(occamRT);
+                    m_CommandBuffer.ClearRenderTarget(true, true, Color.clear);
 
-                        ComputeShader cs = gs.m_CSSplatUtilities;
-                        int kernel = cs.FindKernel("CSRelevancyScoreColoring");
+                    cmb.BeginSample("OccamColoredOverlay");
+                    cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, occamMat, 0, topology, indexCount, instanceCount, mpb);
+                    cmb.EndSample("OccamColoredOverlay");
 
-                        // Set the output for the compute shader to the *new* temporary RT
-                        m_CommandBuffer.SetComputeTextureParam(cs, kernel, "InputTex", occamRT);      // Read the raw mask splats
-                        m_CommandBuffer.SetComputeTextureParam(cs, kernel, "OutputTex", csOutputRT);  // Write the colorized mask
+                    ComputeShader cs = gs.m_CSSplatUtilities;
+                    int kernel = cs.FindKernel("CSRelevancyScoreColoring");
 
-                        int gx = Mathf.CeilToInt(cam.pixelWidth  / 8f);
-                        int gy = Mathf.CeilToInt(cam.pixelHeight / 8f);
-                        m_CommandBuffer.BeginSample("RelevancyScorePass");
-                        m_CommandBuffer.DispatchCompute(cs, kernel, gx, gy, 1);
-                        m_CommandBuffer.EndSample("RelevancyScorePass");
+                    // Set the output for the compute shader to the *new* temporary RT
+                    m_CommandBuffer.SetComputeTextureParam(cs, kernel, "InputTex", occamRT);      // Read the raw mask splats
+                    m_CommandBuffer.SetComputeTextureParam(cs, kernel, "OutputTex", csOutputRT);  // Write the colorized mask
 
-                        // 3. Composite Pass
-                        if (gs.m_MatOccamComposite != null)
-                        {
-                            // Set the base splat RT as _BaseTex
-                            m_CommandBuffer.SetGlobalTexture("_MainTex", csOutputRT);
-                            m_CommandBuffer.SetGlobalTexture("_BaseTex", GaussianSplatRenderer.Props.GaussianSplatRT);
+                    int gx = Mathf.CeilToInt(cam.pixelWidth  / 8f);
+                    int gy = Mathf.CeilToInt(cam.pixelHeight / 8f);
+                    m_CommandBuffer.BeginSample("RelevancyScorePass");
+                    m_CommandBuffer.DispatchCompute(cs, kernel, gx, gy, 1);
+                    m_CommandBuffer.EndSample("RelevancyScorePass");
 
-                            // Blit the *COMPUTE SHADER OUTPUT* to CameraTarget, using the composite shader
-                            m_CommandBuffer.Blit(csOutputRT, BuiltinRenderTextureType.CameraTarget, gs.m_MatOccamComposite);
-                        }
-                        else
-                        {
-                            // fallback: blit the CS output directly (shows only the mask)
-                            m_CommandBuffer.Blit(csOutputRT, BuiltinRenderTextureType.CameraTarget);
-                        }
+                    // Set the base splat RT as _BaseTex
+                    m_CommandBuffer.SetGlobalTexture("_MainTex", csOutputRT);
+                    m_CommandBuffer.SetGlobalTexture("_BaseTex", GaussianSplatRenderer.Props.GaussianSplatRT);
 
-                        m_CommandBuffer.ReleaseTemporaryRT(occamRT);
-                        m_CommandBuffer.ReleaseTemporaryRT(csOutputRT); // Release NEW RT
-                    }
+                    // Blit the *COMPUTE SHADER OUTPUT* to CameraTarget, using the composite shader
+                    m_CommandBuffer.Blit(csOutputRT, BuiltinRenderTextureType.CameraTarget, gs.m_MatOccamComposite);
+
+                    m_CommandBuffer.ReleaseTemporaryRT(occamRT);
+                    m_CommandBuffer.ReleaseTemporaryRT(csOutputRT);
                 }
                 else
                 {
@@ -831,9 +817,9 @@ namespace GaussianSplatting.Runtime
             camTr.localRotation = Quaternion.LookRotation(cam.axisZ, cam.axisY);
             camTr.parent = prevParent;
             camTr.localScale = Vector3.one;
-#if UNITY_EDITOR
-            UnityEditor.EditorUtility.SetDirty(camTr);
-#endif
+            #if UNITY_EDITOR
+                UnityEditor.EditorUtility.SetDirty(camTr);
+            #endif
         }
 
         void ClearGraphicsBuffer(GraphicsBuffer buf)
