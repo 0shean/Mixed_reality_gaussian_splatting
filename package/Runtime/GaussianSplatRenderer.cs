@@ -203,6 +203,9 @@ namespace GaussianSplatting.Runtime
                     m_CommandBuffer.SetComputeTextureParam(cs, kernel, "InputTex", occamRT);      // Read the raw mask splats
                     m_CommandBuffer.SetComputeTextureParam(cs, kernel, "OutputTex", csOutputRT);  // Write the colorized mask
 
+                    m_CommandBuffer.SetComputeFloatParam(cs, "_MaxRelevancyScore", gs.m_MaxRelevancyScore);
+                    m_CommandBuffer.SetComputeFloatParam(cs, "_MinRelevancyScore", gs.m_MinRelevancyScore);
+
                     int gx = Mathf.CeilToInt(cam.pixelWidth  / 8f);
                     int gy = Mathf.CeilToInt(cam.pixelHeight / 8f);
                     m_CommandBuffer.BeginSample("RelevancyScorePass");
