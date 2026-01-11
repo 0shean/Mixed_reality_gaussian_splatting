@@ -166,43 +166,40 @@ namespace GaussianSplatting.Runtime
 
                 if (gs.m_RenderMode == GaussianSplatRenderer.RenderMode.OccamColoredSimilarities)
                 {
-                    // 1. Draw Base Splats to GaussianSplatRT (The background layer)
-                    var baseMat = gs.m_MatSplats;
-                    cmb.SetRenderTarget(GaussianSplatRenderer.Props.GaussianSplatRT, cam.targetTexture);
-                    // ... draw base splats ...
-                    cmb.BeginSample(s_ProfDraw);
-                    cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, baseMat, 0, topology, indexCount, instanceCount, mpb);
-                    cmb.EndSample(s_ProfDraw);
-
-                    // --- Mask/Overlay Passes ---
-                    var occamMat = gs.m_MatOccamSimilarities;
-
+                    // Three-step rendering with separate RTs for cross-platform compatibility
                     // Define temporary RTs
+                    int baseSplatsRT = Shader.PropertyToID("_BaseSplatsRT");
                     int occamRT = Shader.PropertyToID("_OccamTempRT");
-                    int csOutputRT = Shader.PropertyToID("_CSOutputRT"); // NEW RT
+                    int csOutputRT = Shader.PropertyToID("_CSOutputRT");
 
                     var rtDesc = new RenderTextureDescriptor(cam.pixelWidth, cam.pixelHeight, GraphicsFormat.R16G16B16A16_SFloat, 0);
-                    rtDesc.enableRandomWrite = true; // Still required for CS output
+                    rtDesc.enableRandomWrite = true; // Required for CS output
                     rtDesc.useMipMap = false;
 
+                    cmb.GetTemporaryRT(baseSplatsRT, rtDesc);
                     cmb.GetTemporaryRT(occamRT, rtDesc);
-                    cmb.GetTemporaryRT(csOutputRT, rtDesc); // Allocate NEW RT
+                    cmb.GetTemporaryRT(csOutputRT, rtDesc);
 
-                    // A. Draw Occam Splats (Mask data) to occamRT
+                    // Step 1: Draw base splats to baseSplatsRT
+                    cmb.SetRenderTarget(baseSplatsRT);
+                    cmb.ClearRenderTarget(true, true, Color.clear);
+                    cmb.BeginSample(s_ProfDraw);
+                    cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, gs.m_MatSplats, 0, topology, indexCount, instanceCount, mpb);
+                    cmb.EndSample(s_ProfDraw);
+
+                    // Step 2: Draw overlay mask to occamRT
                     cmb.SetRenderTarget(occamRT);
                     cmb.ClearRenderTarget(true, true, Color.clear);
-
                     cmb.BeginSample("OccamColoredOverlay");
-                    cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, occamMat, 0, topology, indexCount, instanceCount, mpb);
+                    cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, gs.m_MatOccamSimilarities, 0, topology, indexCount, instanceCount, mpb);
                     cmb.EndSample("OccamColoredOverlay");
 
+                    // Step 3: Compute shader processes overlay mask
                     ComputeShader cs = gs.m_CSSplatUtilities;
                     int kernel = cs.FindKernel("CSRelevancyScoreColoring");
 
-                    // Set the output for the compute shader to the *new* temporary RT
-                    cmb.SetComputeTextureParam(cs, kernel, "InputTex", occamRT);      // Read the raw mask splats
-                    cmb.SetComputeTextureParam(cs, kernel, "OutputTex", csOutputRT);  // Write the colorized mask
-
+                    cmb.SetComputeTextureParam(cs, kernel, "InputTex", occamRT);
+                    cmb.SetComputeTextureParam(cs, kernel, "OutputTex", csOutputRT);
                     cmb.SetComputeFloatParam(cs, "_MaxRelevancyScore", gs.m_MaxRelevancyScore);
                     cmb.SetComputeFloatParam(cs, "_MinRelevancyScore", gs.m_MinRelevancyScore);
 
@@ -212,13 +209,12 @@ namespace GaussianSplatting.Runtime
                     cmb.DispatchCompute(cs, kernel, gx, gy, 1);
                     cmb.EndSample("RelevancyScorePass");
 
-                    // Set the base splat RT as _BaseTex
+                    // Step 4: Composite the base splats with the processed overlay
+                    cmb.SetGlobalTexture("_BaseTex", baseSplatsRT);
                     cmb.SetGlobalTexture("_MainTex", csOutputRT);
-                    cmb.SetGlobalTexture("_BaseTex", GaussianSplatRenderer.Props.GaussianSplatRT);
-
-                    // Blit the *COMPUTE SHADER OUTPUT* to CameraTarget, using the composite shader
                     cmb.Blit(csOutputRT, BuiltinRenderTextureType.CameraTarget, gs.m_MatOccamComposite);
 
+                    cmb.ReleaseTemporaryRT(baseSplatsRT);
                     cmb.ReleaseTemporaryRT(occamRT);
                     cmb.ReleaseTemporaryRT(csOutputRT);
                 }
