@@ -168,7 +168,7 @@ namespace GaussianSplatting.Runtime
                 {
                     // 1. Draw Base Splats to GaussianSplatRT (The background layer)
                     var baseMat = gs.m_MatSplats;
-                    m_CommandBuffer.SetRenderTarget(GaussianSplatRenderer.Props.GaussianSplatRT, cam.targetTexture);
+                    cmb.SetRenderTarget(GaussianSplatRenderer.Props.GaussianSplatRT, cam.targetTexture);
                     // ... draw base splats ...
                     cmb.BeginSample(s_ProfDraw);
                     cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, baseMat, 0, topology, indexCount, instanceCount, mpb);
@@ -185,12 +185,12 @@ namespace GaussianSplatting.Runtime
                     rtDesc.enableRandomWrite = true; // Still required for CS output
                     rtDesc.useMipMap = false;
 
-                    m_CommandBuffer.GetTemporaryRT(occamRT, rtDesc);
-                    m_CommandBuffer.GetTemporaryRT(csOutputRT, rtDesc); // Allocate NEW RT
+                    cmb.GetTemporaryRT(occamRT, rtDesc);
+                    cmb.GetTemporaryRT(csOutputRT, rtDesc); // Allocate NEW RT
 
                     // A. Draw Occam Splats (Mask data) to occamRT
-                    m_CommandBuffer.SetRenderTarget(occamRT);
-                    m_CommandBuffer.ClearRenderTarget(true, true, Color.clear);
+                    cmb.SetRenderTarget(occamRT);
+                    cmb.ClearRenderTarget(true, true, Color.clear);
 
                     cmb.BeginSample("OccamColoredOverlay");
                     cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, occamMat, 0, topology, indexCount, instanceCount, mpb);
@@ -200,27 +200,27 @@ namespace GaussianSplatting.Runtime
                     int kernel = cs.FindKernel("CSRelevancyScoreColoring");
 
                     // Set the output for the compute shader to the *new* temporary RT
-                    m_CommandBuffer.SetComputeTextureParam(cs, kernel, "InputTex", occamRT);      // Read the raw mask splats
-                    m_CommandBuffer.SetComputeTextureParam(cs, kernel, "OutputTex", csOutputRT);  // Write the colorized mask
+                    cmb.SetComputeTextureParam(cs, kernel, "InputTex", occamRT);      // Read the raw mask splats
+                    cmb.SetComputeTextureParam(cs, kernel, "OutputTex", csOutputRT);  // Write the colorized mask
 
-                    m_CommandBuffer.SetComputeFloatParam(cs, "_MaxRelevancyScore", gs.m_MaxRelevancyScore);
-                    m_CommandBuffer.SetComputeFloatParam(cs, "_MinRelevancyScore", gs.m_MinRelevancyScore);
+                    cmb.SetComputeFloatParam(cs, "_MaxRelevancyScore", gs.m_MaxRelevancyScore);
+                    cmb.SetComputeFloatParam(cs, "_MinRelevancyScore", gs.m_MinRelevancyScore);
 
                     int gx = Mathf.CeilToInt(cam.pixelWidth  / 8f);
                     int gy = Mathf.CeilToInt(cam.pixelHeight / 8f);
-                    m_CommandBuffer.BeginSample("RelevancyScorePass");
-                    m_CommandBuffer.DispatchCompute(cs, kernel, gx, gy, 1);
-                    m_CommandBuffer.EndSample("RelevancyScorePass");
+                    cmb.BeginSample("RelevancyScorePass");
+                    cmb.DispatchCompute(cs, kernel, gx, gy, 1);
+                    cmb.EndSample("RelevancyScorePass");
 
                     // Set the base splat RT as _BaseTex
-                    m_CommandBuffer.SetGlobalTexture("_MainTex", csOutputRT);
-                    m_CommandBuffer.SetGlobalTexture("_BaseTex", GaussianSplatRenderer.Props.GaussianSplatRT);
+                    cmb.SetGlobalTexture("_MainTex", csOutputRT);
+                    cmb.SetGlobalTexture("_BaseTex", GaussianSplatRenderer.Props.GaussianSplatRT);
 
                     // Blit the *COMPUTE SHADER OUTPUT* to CameraTarget, using the composite shader
-                    m_CommandBuffer.Blit(csOutputRT, BuiltinRenderTextureType.CameraTarget, gs.m_MatOccamComposite);
+                    cmb.Blit(csOutputRT, BuiltinRenderTextureType.CameraTarget, gs.m_MatOccamComposite);
 
-                    m_CommandBuffer.ReleaseTemporaryRT(occamRT);
-                    m_CommandBuffer.ReleaseTemporaryRT(csOutputRT);
+                    cmb.ReleaseTemporaryRT(occamRT);
+                    cmb.ReleaseTemporaryRT(csOutputRT);
                 }
                 else
                 {
@@ -236,30 +236,30 @@ namespace GaussianSplatting.Runtime
                     var rtDesc = new RenderTextureDescriptor(cam.pixelWidth, cam.pixelHeight, GraphicsFormat.R16G16B16A16_SFloat, 0);
                     rtDesc.enableRandomWrite = true;
                     rtDesc.useMipMap = false;
-                    m_CommandBuffer.GetTemporaryRT(softmaxRTID, rtDesc);
-                    m_CommandBuffer.BeginSample("RelevancyScorePass");
+                    cmb.GetTemporaryRT(softmaxRTID, rtDesc);
+                    cmb.BeginSample("RelevancyScorePass");
 
                     ComputeShader cs = gs.m_CSSplatUtilities;
                     int kernel = cs.FindKernel("CSRelevancyScoreColoring");
 
-                    m_CommandBuffer.SetRenderTarget(softmaxRTID);
+                    cmb.SetRenderTarget(softmaxRTID);
 
-                    m_CommandBuffer.SetComputeTextureParam(cs, kernel, "InputTex",  GaussianSplatRenderer.Props.GaussianSplatRT);
-                    m_CommandBuffer.SetComputeTextureParam(cs, kernel, "OutputTex", softmaxRTID);
+                    cmb.SetComputeTextureParam(cs, kernel, "InputTex",  GaussianSplatRenderer.Props.GaussianSplatRT);
+                    cmb.SetComputeTextureParam(cs, kernel, "OutputTex", softmaxRTID);
 
                     // Add the compute max / min relevancy scores.
-                    m_CommandBuffer.SetComputeFloatParam(cs, "_MaxRelevancyScore", gs.m_MaxRelevancyScore);
-                    m_CommandBuffer.SetComputeFloatParam(cs, "_MinRelevancyScore", gs.m_MinRelevancyScore);
+                    cmb.SetComputeFloatParam(cs, "_MaxRelevancyScore", gs.m_MaxRelevancyScore);
+                    cmb.SetComputeFloatParam(cs, "_MinRelevancyScore", gs.m_MinRelevancyScore);
 
                     int gx = Mathf.CeilToInt(cam.pixelWidth  / 8f);
                     int gy = Mathf.CeilToInt(cam.pixelHeight / 8f);
 
-                    m_CommandBuffer.DispatchCompute(cs, kernel, gx, gy, 1);
-                    m_CommandBuffer.EndSample("RelevancyScorePass");
+                    cmb.DispatchCompute(cs, kernel, gx, gy, 1);
+                    cmb.EndSample("RelevancyScorePass");
 
-                    m_CommandBuffer.Blit(softmaxRTID, BuiltinRenderTextureType.CameraTarget);
+                    cmb.Blit(softmaxRTID, BuiltinRenderTextureType.CameraTarget);
 
-                    m_CommandBuffer.ReleaseTemporaryRT(softmaxRTID);
+                    cmb.ReleaseTemporaryRT(softmaxRTID);
                 }
             }
             return matComposite;
