@@ -150,6 +150,10 @@ namespace GaussianSplatting.Runtime
                 mpb.SetInteger(GaussianSplatRenderer.Props.DisplayIndex, gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugPointIndices ? 1 : 0);
                 mpb.SetInteger(GaussianSplatRenderer.Props.DisplayChunks, gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds ? 1 : 0);
 
+                // Set near plane cutoff globally (more reliable than MaterialPropertyBlock)
+                float nearCutoff = XRSettings.enabled ? cam.nearClipPlane + gs.m_NearPlaneCutoff : gs.m_NearPlaneCutoff;
+                Shader.SetGlobalFloat("_SplatNearPlaneCutoff", nearCutoff);
+
                 cmb.BeginSample(s_ProfCalcView);
                 gs.CalcViewData(cmb, cam);
                 cmb.EndSample(s_ProfCalcView);
@@ -163,9 +167,72 @@ namespace GaussianSplatting.Runtime
                 if (gs.m_RenderMode == GaussianSplatRenderer.RenderMode.DebugChunkBounds)
                     instanceCount = gs.m_GpuChunksValid ? gs.m_GpuChunks.count : 0;
 
-                cmb.BeginSample(s_ProfDraw);
-                cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, displayMat, 0, topology, indexCount, instanceCount, mpb);
-                cmb.EndSample(s_ProfDraw);
+                if (gs.m_RenderMode == GaussianSplatRenderer.RenderMode.OccamColoredSimilarities)
+                {
+                    // Three-step rendering with separate RTs for cross-platform compatibility
+                    // Define temporary RTs
+                    int baseSplatsRT = Shader.PropertyToID("_BaseSplatsRT");
+                    int occamRT = Shader.PropertyToID("_OccamTempRT");
+                    int csOutputRT = Shader.PropertyToID("_CSOutputRT");
+
+                    var rtDesc = new RenderTextureDescriptor(cam.pixelWidth, cam.pixelHeight, GraphicsFormat.R16G16B16A16_SFloat, 0);
+                    rtDesc.enableRandomWrite = true; // Required for CS output
+                    rtDesc.useMipMap = false;
+
+                    cmb.GetTemporaryRT(baseSplatsRT, rtDesc);
+                    cmb.GetTemporaryRT(occamRT, rtDesc);
+                    cmb.GetTemporaryRT(csOutputRT, rtDesc);
+
+                    // Step 1: Draw base splats to baseSplatsRT
+                    cmb.SetRenderTarget(baseSplatsRT);
+                    cmb.ClearRenderTarget(true, true, Color.clear);
+                    cmb.BeginSample(s_ProfDraw);
+                    cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, gs.m_MatSplats, 0, topology, indexCount, instanceCount, mpb);
+                    cmb.EndSample(s_ProfDraw);
+
+                    // Step 2: Draw overlay mask to occamRT
+                    cmb.SetRenderTarget(occamRT);
+                    cmb.ClearRenderTarget(true, true, Color.clear);
+                    cmb.BeginSample("OccamColoredOverlay");
+                    cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, gs.m_MatOccamSimilarities, 0, topology, indexCount, instanceCount, mpb);
+                    cmb.EndSample("OccamColoredOverlay");
+
+                    // Step 3: Compute shader processes overlay mask
+                    ComputeShader cs = gs.m_CSSplatUtilities;
+                    int kernel = cs.FindKernel("CSRelevancyScoreColoring");
+
+                    cmb.SetComputeTextureParam(cs, kernel, "InputTex", occamRT);
+                    cmb.SetComputeTextureParam(cs, kernel, "OutputTex", csOutputRT);
+                    cmb.SetComputeFloatParam(cs, "_MaxRelevancyScore", gs.m_MaxRelevancyScore);
+                    cmb.SetComputeFloatParam(cs, "_MinRelevancyScore", gs.m_MinRelevancyScore);
+                    cmb.SetComputeFloatParam(cs, "_RelevancyThreshold", gs.m_RelevancyThreshold);
+                    cmb.SetComputeIntParam(cs, "_UseTransparentBackground", 1);  // Transparent for colored mode
+
+                    int gx = Mathf.CeilToInt(cam.pixelWidth  / 8f);
+                    int gy = Mathf.CeilToInt(cam.pixelHeight / 8f);
+                    cmb.BeginSample("RelevancyScorePass");
+                    cmb.DispatchCompute(cs, kernel, gx, gy, 1);
+                    cmb.EndSample("RelevancyScorePass");
+
+                    // Step 4: Composite the base splats with the processed overlay
+                    cmb.SetGlobalTexture("_BaseTex", baseSplatsRT);
+                    cmb.SetGlobalTexture("_MainTex", csOutputRT);
+                    cmb.Blit(csOutputRT, BuiltinRenderTextureType.CameraTarget, gs.m_MatOccamComposite);
+
+                    // Clear global textures before releasing RTs to prevent dangling references
+                    cmb.SetGlobalTexture("_BaseTex", BuiltinRenderTextureType.None);
+                    cmb.SetGlobalTexture("_MainTex", BuiltinRenderTextureType.None);
+
+                    cmb.ReleaseTemporaryRT(baseSplatsRT);
+                    cmb.ReleaseTemporaryRT(occamRT);
+                    cmb.ReleaseTemporaryRT(csOutputRT);
+                }
+                else
+                {
+                    cmb.BeginSample(s_ProfDraw);
+                    cmb.DrawProcedural(gs.m_GpuIndexBuffer, matrix, displayMat, 0, topology, indexCount, instanceCount, mpb);
+                    cmb.EndSample(s_ProfDraw);
+                }
 
                 // Additional step for Occam similarities, compute the softmax of relevancy scores.
                 if (gs.m_RenderMode == GaussianSplatRenderer.RenderMode.OccamSimilarities)
@@ -174,30 +241,32 @@ namespace GaussianSplatting.Runtime
                     var rtDesc = new RenderTextureDescriptor(cam.pixelWidth, cam.pixelHeight, GraphicsFormat.R16G16B16A16_SFloat, 0);
                     rtDesc.enableRandomWrite = true;
                     rtDesc.useMipMap = false;
-                    m_CommandBuffer.GetTemporaryRT(softmaxRTID, rtDesc);
-                    m_CommandBuffer.BeginSample("RelevancyScorePass");
+                    cmb.GetTemporaryRT(softmaxRTID, rtDesc);
+                    cmb.BeginSample("RelevancyScorePass");
 
                     ComputeShader cs = gs.m_CSSplatUtilities;
                     int kernel = cs.FindKernel("CSRelevancyScoreColoring");
 
-                    m_CommandBuffer.SetRenderTarget(softmaxRTID);
+                    cmb.SetRenderTarget(softmaxRTID);
 
-                    m_CommandBuffer.SetComputeTextureParam(cs, kernel, "InputTex",  GaussianSplatRenderer.Props.GaussianSplatRT);
-                    m_CommandBuffer.SetComputeTextureParam(cs, kernel, "OutputTex", softmaxRTID);
+                    cmb.SetComputeTextureParam(cs, kernel, "InputTex",  GaussianSplatRenderer.Props.GaussianSplatRT);
+                    cmb.SetComputeTextureParam(cs, kernel, "OutputTex", softmaxRTID);
 
-                    // Add the compute max / min relevancy scores.
-                    m_CommandBuffer.SetComputeFloatParam(cs, "_MaxRelevancyScore", gs.m_MaxRelevancyScore);
-                    m_CommandBuffer.SetComputeFloatParam(cs, "_MinRelevancyScore", gs.m_MinRelevancyScore);
+                    // Add the compute max / min relevancy scores and threshold.
+                    cmb.SetComputeFloatParam(cs, "_MaxRelevancyScore", gs.m_MaxRelevancyScore);
+                    cmb.SetComputeFloatParam(cs, "_MinRelevancyScore", gs.m_MinRelevancyScore);
+                    cmb.SetComputeFloatParam(cs, "_RelevancyThreshold", gs.m_RelevancyThreshold);
+                    cmb.SetComputeIntParam(cs, "_UseTransparentBackground", 0);  // Grayscale for non-colored mode
 
                     int gx = Mathf.CeilToInt(cam.pixelWidth  / 8f);
                     int gy = Mathf.CeilToInt(cam.pixelHeight / 8f);
 
-                    m_CommandBuffer.DispatchCompute(cs, kernel, gx, gy, 1);
-                    m_CommandBuffer.EndSample("RelevancyScorePass");
+                    cmb.DispatchCompute(cs, kernel, gx, gy, 1);
+                    cmb.EndSample("RelevancyScorePass");
 
-                    m_CommandBuffer.Blit(softmaxRTID, BuiltinRenderTextureType.CameraTarget);
+                    cmb.Blit(softmaxRTID, BuiltinRenderTextureType.CameraTarget);
 
-                    m_CommandBuffer.ReleaseTemporaryRT(softmaxRTID);
+                    cmb.ReleaseTemporaryRT(softmaxRTID);
                 }
             }
             return matComposite;
@@ -238,11 +307,10 @@ namespace GaussianSplatting.Runtime
             Material matComposite = SortAndRenderSplats(cam, m_CommandBuffer);
 
             // compose unless overridden by OccamSimilarities
-            if (matComposite != null && m_ActiveSplats[0].Item1.m_RenderMode != GaussianSplatRenderer.RenderMode.OccamSimilarities)
+            if (matComposite != null && m_ActiveSplats[0].Item1.m_RenderMode != GaussianSplatRenderer.RenderMode.OccamSimilarities && m_ActiveSplats[0].Item1.m_RenderMode != GaussianSplatRenderer.RenderMode.OccamColoredSimilarities)
             {
                 m_CommandBuffer.BeginSample(s_ProfCompose);
-                m_CommandBuffer.SetRenderTarget(BuiltinRenderTextureType.CameraTarget);
-                m_CommandBuffer.DrawProcedural(Matrix4x4.identity, matComposite, 0, MeshTopology.Triangles, 3, 1);
+                m_CommandBuffer.Blit(GaussianSplatRenderer.Props.GaussianSplatRT, BuiltinRenderTextureType.CameraTarget, matComposite);
                 m_CommandBuffer.EndSample(s_ProfCompose);
             }
             // m_CommandBuffer.BeginSample(s_ProfCompose);
@@ -264,6 +332,7 @@ namespace GaussianSplatting.Runtime
             DebugBoxes,
             DebugChunkBounds,
             OccamSimilarities,
+            OccamColoredSimilarities,
         }
         public GaussianSplatAsset m_Asset;
 
@@ -284,10 +353,22 @@ namespace GaussianSplatting.Runtime
         public RenderMode m_RenderMode = RenderMode.Splats;
         [Range(1.0f,15.0f)] public float m_PointDisplaySize = 3.0f;
 
+        [Header("Near Plane Culling")]
+        [Range(0.0f, 1.0f)]
+        [Tooltip("Cull splats closer than this distance to prevent flickering. Increase if you see flickering when close to objects.")]
+        public float m_NearPlaneCutoff = 0.25f;
+
+        [Header("Relevancy Highlighting")]
+        [Range(0.0f, 1.0f)]
+        [Tooltip("Threshold for highlighting gaussians. Lower = more highlighted, Higher = fewer highlighted.")]
+        public float m_RelevancyThreshold = 0.5f;
+
         public GaussianCutout[] m_Cutouts;
 
         public Shader m_ShaderSplats;
         public Shader m_ShaderComposite;
+        // New composite shader to opaque-overlay occam results over splats
+        public Shader m_ShaderOccamComposite;
         public Shader m_ShaderDebugPoints;
         public Shader m_ShaderDebugBoxes;
         public Shader m_ShaderOccamSimilarities;
@@ -329,6 +410,7 @@ namespace GaussianSplatting.Runtime
 
         internal Material m_MatSplats;
         internal Material m_MatComposite;
+        internal Material m_MatOccamComposite;
         internal Material m_MatDebugPoints;
         internal Material m_MatDebugBoxes;
         internal Material m_MatOccamSimilarities;
@@ -515,7 +597,8 @@ namespace GaussianSplatting.Runtime
         }
 
         bool resourcesAreSetUp => m_ShaderSplats != null && m_ShaderComposite != null && m_ShaderDebugPoints != null &&
-                                  m_ShaderDebugBoxes != null && m_CSSplatUtilities != null && m_ShaderOccamSimilarities != null && SystemInfo.supportsComputeShaders;
+                                  m_ShaderDebugBoxes != null && m_CSSplatUtilities != null && m_ShaderOccamSimilarities != null &&
+                                  m_ShaderOccamComposite != null && SystemInfo.supportsComputeShaders;
 
         public void EnsureMaterials()
         {
@@ -523,6 +606,7 @@ namespace GaussianSplatting.Runtime
             {
                 m_MatSplats = new Material(m_ShaderSplats) {name = "GaussianSplats"};
                 m_MatComposite = new Material(m_ShaderComposite) {name = "GaussianClearDstAlpha"};
+                m_MatOccamComposite = new Material(m_ShaderOccamComposite) { name = "GaussianOccamComposite" };
                 m_MatDebugPoints = new Material(m_ShaderDebugPoints) {name = "GaussianDebugPoints"};
                 m_MatDebugBoxes = new Material(m_ShaderDebugBoxes) {name = "GaussianDebugBoxes"};
                 m_MatOccamSimilarities = new Material(m_ShaderOccamSimilarities) {name = "GaussianOccamSimilarities"};
@@ -651,6 +735,7 @@ namespace GaussianSplatting.Runtime
             DestroyImmediate(m_MatDebugPoints);
             DestroyImmediate(m_MatDebugBoxes);
             DestroyImmediate(m_MatOccamSimilarities);
+            DestroyImmediate(m_MatOccamComposite);
         }
 
         internal void CalcViewData(CommandBuffer cmb, Camera cam)

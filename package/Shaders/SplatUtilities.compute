@@ -782,6 +782,8 @@ Texture2D<float4> InputTex;
 RWTexture2D<float4> OutputTex;
 float _MaxRelevancyScore;
 float _MinRelevancyScore;
+float _RelevancyThreshold;
+int _UseTransparentBackground;  // 1 = transparent (for OccamColoredSimilarities), 0 = grayscale (for OccamSimilarities)
 
 [numthreads(8,8,1)]
 void CSRelevancyScoreColoring(uint3 id : SV_DispatchThreadID)
@@ -791,10 +793,15 @@ void CSRelevancyScoreColoring(uint3 id : SV_DispatchThreadID)
     float4 c = InputTex[uv];
 
     float rawScore = c.r;  // The r channel contains the blended normalized relevancy scores.
-    if (rawScore <= 0.5) {
-        // Below 0.5, not closer to the query than the generic query.
-        // Unpack the values from the g and b channels for color output.
-        OutputTex[uv] = float4(c.g, c.g, c.g, 1);
+    if (rawScore <= _RelevancyThreshold) {
+        // Below threshold, not relevant enough to highlight.
+        if (_UseTransparentBackground == 1) {
+            // Output transparent so base colored splats show through in OccamColoredSimilarities mode.
+            OutputTex[uv] = float4(c.g, c.g, c.g, 0);
+        } else {
+            // Output grayscale with full alpha for OccamSimilarities mode.
+            OutputTex[uv] = float4(c.g, c.g, c.g, 1);
+        }
         return;
     }
 
@@ -805,7 +812,7 @@ void CSRelevancyScoreColoring(uint3 id : SV_DispatchThreadID)
 
     float3 col = HeatmapColor(normalizedScore);
 
-    // Output in RG; keep alpha/green if needed
+    // Output heatmap with full alpha so it overlays the base splats
     OutputTex[uv] = float4(col.r, col.g, col.b, 1);
 }
 

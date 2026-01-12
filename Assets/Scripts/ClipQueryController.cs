@@ -4,12 +4,18 @@ using UnityEngine.XR;
 using UnityEngine.UI;
 using TMPro;
 
+/// <summary>
+/// DEPRECATED: Keyboard input has been removed. Use VoiceInputController instead.
+/// This component is kept for reference but is disabled.
+/// Left trigger = start/stop voice recording
+/// B button = cancel voice recording
+/// </summary>
 public class ClipQueryController : MonoBehaviour
 {
     [Header("References")]
     public GaussianSplatRenderer splatRenderer;
 
-    [Header("UI References")]
+    [Header("UI References (DEPRECATED - Not used)")]
     public GameObject inputCanvas;
     public TMP_InputField queryInputField;
     public Button sendQueryButton;
@@ -30,99 +36,31 @@ public class ClipQueryController : MonoBehaviour
 
     void Start()
     {
-        Debug.Log("=== ClipQueryController Start() called ===");
+        Debug.Log("=== ClipQueryController: DEPRECATED - Keyboard input removed. Use voice input (left trigger) instead. ===");
 
-        // Get VR camera
+        // Hide keyboard UI if it exists
+        if (inputCanvas != null)
+        {
+            inputCanvas.SetActive(false);
+        }
+        isUIVisible = false;
+
+        // Get VR camera (still needed for ExecuteQuery if called externally)
         vrCamera = Camera.main;
         if (vrCamera == null)
         {
-            Debug.LogWarning("Main camera not found, searching for any camera...");
             vrCamera = FindObjectOfType<Camera>();
         }
 
         if (splatRenderer == null)
         {
-            Debug.Log("Searching for GaussianSplatRenderer...");
             splatRenderer = FindObjectOfType<GaussianSplatRenderer>();
-            if (splatRenderer == null)
-            {
-                Debug.LogError("ClipQueryController: No GaussianSplatRenderer found in scene!");
-            }
-            else
-            {
-                Debug.Log("Found GaussianSplatRenderer!");
-            }
         }
-
-        // Check for ClipClient
-        var clipClient = GetComponent<ClipClient>();
-        if (clipClient == null)
-        {
-            Debug.LogError("ClipClient component NOT FOUND! Please add ClipClient to this GameObject.");
-        }
-        else
-        {
-            Debug.Log($"ClipClient found! Server URL: {clipClient.serverUrl}");
-        }
-
-        // Setup UI
-        if (inputCanvas != null)
-        {
-            inputCanvas.SetActive(false);
-            isUIVisible = false;
-        }
-        else
-        {
-            Debug.LogError("Input Canvas not assigned!");
-        }
-
-        if (sendQueryButton != null)
-        {
-            sendQueryButton.onClick.AddListener(OnSendQueryButtonClicked);
-        }
-        else
-        {
-            Debug.LogError("Send Query Button not assigned!");
-        }
-
-        Debug.Log("ClipQueryController initialized. Press TRIGGER (right controller) to open text input.");
     }
 
     void Update()
     {
-        // Check for trigger press on right controller (Quest) - ONLY to open UI
-        bool triggerPressed = false;
-        bool bButtonPressed = false;
-
-        InputDevice rightController = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
-        if (rightController.isValid)
-        {
-            // Trigger to open UI
-            if (rightController.TryGetFeatureValue(CommonUsages.triggerButton, out bool triggerValue))
-            {
-                triggerPressed = triggerValue;
-            }
-
-            // B button to close UI (secondary button on Quest)
-            if (rightController.TryGetFeatureValue(CommonUsages.secondaryButton, out bool bButtonValue))
-            {
-                bButtonPressed = bButtonValue;
-            }
-        }
-
-        // Detect trigger press (rising edge) - ONLY open UI when it's closed
-        if (triggerPressed && !buttonWasPressed && !isUIVisible)
-        {
-            OpenInputUI();
-        }
-
-        // B button to close UI
-        if (bButtonPressed && !buttonWasPressed && isUIVisible)
-        {
-            CloseInputUI();
-        }
-
-        buttonWasPressed = triggerPressed || bButtonPressed;
+        // Keyboard input disabled - use VoiceInputController instead
     }
 
     void OpenInputUI()

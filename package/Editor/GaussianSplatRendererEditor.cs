@@ -29,9 +29,12 @@ namespace GaussianSplatting.Editor
         SerializedProperty m_PropSortNthFrame;
         SerializedProperty m_PropRenderMode;
         SerializedProperty m_PropPointDisplaySize;
+        SerializedProperty m_PropNearPlaneCutoff;
+        SerializedProperty m_PropRelevancyThreshold;
         SerializedProperty m_PropCutouts;
         SerializedProperty m_PropShaderSplats;
         SerializedProperty m_PropShaderComposite;
+        SerializedProperty m_PropShaderOccamComposite;
         SerializedProperty m_PropShaderDebugPoints;
         SerializedProperty m_PropShaderDebugBoxes;
         SerializedProperty m_PropShaderOccamSimilarities;
@@ -72,9 +75,12 @@ namespace GaussianSplatting.Editor
             m_PropSortNthFrame = serializedObject.FindProperty("m_SortNthFrame");
             m_PropRenderMode = serializedObject.FindProperty("m_RenderMode");
             m_PropPointDisplaySize = serializedObject.FindProperty("m_PointDisplaySize");
+            m_PropNearPlaneCutoff = serializedObject.FindProperty("m_NearPlaneCutoff");
+            m_PropRelevancyThreshold = serializedObject.FindProperty("m_RelevancyThreshold");
             m_PropCutouts = serializedObject.FindProperty("m_Cutouts");
             m_PropShaderSplats = serializedObject.FindProperty("m_ShaderSplats");
             m_PropShaderComposite = serializedObject.FindProperty("m_ShaderComposite");
+            m_PropShaderOccamComposite = serializedObject.FindProperty("m_ShaderOccamComposite");
             m_PropShaderDebugPoints = serializedObject.FindProperty("m_ShaderDebugPoints");
             m_PropShaderDebugBoxes = serializedObject.FindProperty("m_ShaderDebugBoxes");
             m_PropShaderOccamSimilarities = serializedObject.FindProperty("m_ShaderOccamSimilarities");
@@ -121,6 +127,9 @@ namespace GaussianSplatting.Editor
             EditorGUILayout.PropertyField(m_PropRenderMode);
             if (m_PropRenderMode.intValue is (int)GaussianSplatRenderer.RenderMode.DebugPoints or (int)GaussianSplatRenderer.RenderMode.DebugPointIndices)
                 EditorGUILayout.PropertyField(m_PropPointDisplaySize);
+            EditorGUILayout.PropertyField(m_PropNearPlaneCutoff);
+            if (m_PropRenderMode.intValue is (int)GaussianSplatRenderer.RenderMode.OccamSimilarities or (int)GaussianSplatRenderer.RenderMode.OccamColoredSimilarities)
+                EditorGUILayout.PropertyField(m_PropRelevancyThreshold);
 
             EditorGUILayout.Space();
             m_ResourcesExpanded = EditorGUILayout.Foldout(m_ResourcesExpanded, "Resources", true, EditorStyles.foldoutHeader);
@@ -128,6 +137,7 @@ namespace GaussianSplatting.Editor
             {
                 EditorGUILayout.PropertyField(m_PropShaderSplats);
                 EditorGUILayout.PropertyField(m_PropShaderComposite);
+                EditorGUILayout.PropertyField(m_PropShaderOccamComposite);
                 EditorGUILayout.PropertyField(m_PropShaderDebugPoints);
                 EditorGUILayout.PropertyField(m_PropShaderDebugBoxes);
                 EditorGUILayout.PropertyField(m_PropShaderOccamSimilarities);
