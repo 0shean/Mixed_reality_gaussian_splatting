@@ -38,6 +38,7 @@ namespace GaussianSplatting.Editor
         SerializedProperty m_PropShaderDebugPoints;
         SerializedProperty m_PropShaderDebugBoxes;
         SerializedProperty m_PropShaderOccamSimilarities;
+        SerializedProperty m_PropShaderOccamComposite;
         SerializedProperty m_PropCSSplatUtilities;
 
         string editorCLIPQuery = "";
@@ -84,6 +85,7 @@ namespace GaussianSplatting.Editor
             m_PropShaderDebugPoints = serializedObject.FindProperty("m_ShaderDebugPoints");
             m_PropShaderDebugBoxes = serializedObject.FindProperty("m_ShaderDebugBoxes");
             m_PropShaderOccamSimilarities = serializedObject.FindProperty("m_ShaderOccamSimilarities");
+            m_PropShaderOccamComposite = serializedObject.FindProperty("m_ShaderOccamComposite");
             m_PropCSSplatUtilities = serializedObject.FindProperty("m_CSSplatUtilities");
 
             s_AllEditors.Add(this);
@@ -141,6 +143,7 @@ namespace GaussianSplatting.Editor
                 EditorGUILayout.PropertyField(m_PropShaderDebugPoints);
                 EditorGUILayout.PropertyField(m_PropShaderDebugBoxes);
                 EditorGUILayout.PropertyField(m_PropShaderOccamSimilarities);
+                EditorGUILayout.PropertyField(m_PropShaderOccamComposite);
                 EditorGUILayout.PropertyField(m_PropCSSplatUtilities);
             }
             bool validAndEnabled = gs && gs.enabled && gs.gameObject.activeInHierarchy && gs.HasValidAsset;
