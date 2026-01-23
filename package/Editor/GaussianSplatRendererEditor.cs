@@ -38,7 +38,6 @@ namespace GaussianSplatting.Editor
         SerializedProperty m_PropShaderDebugPoints;
         SerializedProperty m_PropShaderDebugBoxes;
         SerializedProperty m_PropShaderOccamSimilarities;
-        SerializedProperty m_PropShaderOccamComposite;
         SerializedProperty m_PropCSSplatUtilities;
 
         string editorCLIPQuery = "";
