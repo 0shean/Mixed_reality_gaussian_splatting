@@ -10,8 +10,6 @@ This project enables users to interact with photorealistic 3D scenes in VR using
 
 We overcome the hardware limitations of mobile VR (8GB RAM, Adreno 740 GPU) by offloading heavy language embedding computations to a local server while maintaining real-time rendering natively on the headset.
 
-This is a fork of [UnityGaussianSplatting](https://github.com/aras-p/UnityGaussianSplatting).
-
 ### Key Features
 
 - **Real-Time Rendering**: Native 3D Gaussian Splatting on VR headset at stable frame rates (~12 FPS)
@@ -28,22 +26,37 @@ This is a fork of [UnityGaussianSplatting](https://github.com/aras-p/UnityGaussi
 
 - **Unity Version:** `2023.1.14f1`
 - **Hardware:** Meta Quest 3 and a laptop/PC (both must be on the same Wi-Fi network)
-- **Python:** 3.x with virtual environment support
-- **Operating System:** The project was developed on macOS/Linux (the server uses `source venv/bin/activate`)
+- **Python:** 3.9 with virtual environment support
 
-### 1. Repository & Assets
+### 1. Backend Setup
 
-1. Clone this repository:
+1. Navigate to the `occam_backend/` directory:
 ```bash
-   git clone [repository-url]
-   cd [project-directory]
+   cd occam_backend/
 ```
 
-2. Download the required `.ply` files:
+2. Create a virtual environment:
+```bash
+   python3 -m venv venv
+```
+
+3. Activate the virtual environment:
+```bash
+   source venv/bin/activate
+```
+
+4. Install the required dependencies:
+```bash
+   pip install -r requirements.txt
+```
+
+### 2. Repository & Assets
+
+1. Download the required `.ply` files:
    - [occam_bonsai_mcmc.ply - https://polybox.ethz.ch/index.php/s/Qb9QYnDNMqS8XjC]
    - [occam_meeting_room_mcmc.ply - https://polybox.ethz.ch/index.php/s/3t9sLdEF6nKATAw]
 
-3. Place both `.ply` files inside the `occam_backend/` directory of the project.
+2. Place both `.ply` files inside the `occam_backend/` directory of the project.
 
 ### 2. Unity Configuration
 
@@ -60,7 +73,7 @@ This is a fork of [UnityGaussianSplatting](https://github.com/aras-p/UnityGaussi
 
 The system requires both the VR app and the Python backend server running simultaneously.
 
-**Critical:** The server and VR application must be configured for the **same scene** (either bonsai or meeting_room).
+**Critical:** The server and VR application must be configured for the **same scene** (either bonsai or meeting_room) and be connected to the same wi-fi network.
 
 ### 1. Launch the Backend Server
 
