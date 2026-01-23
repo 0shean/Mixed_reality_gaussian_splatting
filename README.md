@@ -40,8 +40,8 @@ This is a fork of [UnityGaussianSplatting](https://github.com/aras-p/UnityGaussi
 ```
 
 2. Download the required `.ply` files:
-   - [occam_bonsai_mcmc.ply - INSERT LINK HERE]
-   - [occam_meeting_room_mcmc.ply - INSERT LINK HERE]
+   - [occam_bonsai_mcmc.ply - https://polybox.ethz.ch/index.php/s/Qb9QYnDNMqS8XjC]
+   - [occam_meeting_room_mcmc.ply - https://polybox.ethz.ch/index.php/s/3t9sLdEF6nKATAw]
 
 3. Place both `.ply` files inside the `occam_backend/` directory of the project.
 
@@ -90,10 +90,10 @@ The system requires both the VR app and the Python backend server running simult
 2. Ensure the headset is connected to the same Wi-Fi network as your PC
 3. Launch the deployed application on the headset
 4. Use the controllers to interact:
-   - **Right Trigger:** Activate voice input
-   - **Right Trigger (toggle):** Switch between rendering modes
-   - **A Button (right controller):** Activate Occam Colored Similarities mode
-5. Say the name of an object (e.g., "bonsai tree", "camera", "push toy")
+   - **Left Trigger:** Start/end voice input
+   - **Right Trigger (toggle):** Switch between rendering modes (gaussian splats / occam similarities (black and white))
+   - **A Button (right controller):** Activate Occam Colored Similarities mode. Press **A** again or **right trigger** to switch to other rendering modes
+5. Press **Left trigger**, say the name of an object (e.g., "bonsai tree", "camera", "push toy") and **press the trigger again** 
 6. The system will process your query and highlight matching objects in real-time
 
 ### Rendering Modes
@@ -102,6 +102,22 @@ The current rendering mode is displayed in a panel at the top-left corner of you
 1. **Standard Mode:** Colored Gaussian Splats
 2. **Occam Similarities:** Grayscale scene with heatmap highlighting
 3. **Occam Colored Similarities:** Original colors with relevancy heatmap overlay
+
+## 🎨 Creating Custom Scenes
+
+The meeting room scene was created using our customized version of SplatFactory. If you want to create your own language-queryable Gaussian scenes:
+
+1. Visit our [SplatFactory fork](https://github.com/Mitdia/SplatFactory) for scene capture and training
+2. Follow the pipeline described in the report (Section 3.3):
+   - Capture the scene (video or multiple overlapping photos)
+   - Prepare a COLMAP dataset with camera poses
+   - Train the 3D Gaussian scene
+   - Extend with language features using Occam's LGS approach
+3. Optionally apply MCMC pruning to reduce Gaussian count for better performance
+4. Export the final scene as a `.ply` file with language feature fields
+
+The bonsai scene used in this project is from the [NeRF baselines paper](https://github.com/jkulhanek/nerfbaselines).
+
 
 ## 📂 Project Structure
 ```
@@ -146,7 +162,7 @@ Our user study with 12 participants achieved:
 
 - Performance is limited by Gaussian count (~1 million max for stable frame rate)
 - Requires external server connection (adds latency)
-- Multi-pass rendering mode (Occam Colored Similarities) reduces frame rate
+- Multi-pass rendering mode (Occam Colored Similarities) reduces frame rate and **may introduce intense flickering if used with meeting room or larger scene** 
 - Object highlighting can be noisy in some cases
 
 ## 📄 References
@@ -156,6 +172,7 @@ This project builds upon:
 - **Occam's LGS** ([Cheng et al., 2025](https://arxiv.org/abs/2411.14027))
 - **LangSplat** ([Qin et al., 2023](https://arxiv.org/abs/2312.16084))
 - **UnityGaussianSplatting** ([Aras Pranckevičius](https://github.com/aras-p/UnityGaussianSplatting))
+- **SplatFactory** ([Our customized fork](https://github.com/Mitdia/SplatFactory))
 
 ## 🤝 Acknowledgments
 
